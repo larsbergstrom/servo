@@ -22,8 +22,6 @@ use std::comm;
 use std::comm::{Chan, SharedChan, Port};
 use std::num::Orderable;
 use std::vec;
-use std::rt::rtio::RtioTimer;
-use std::rt::io::timer::Timer;
 use geom::matrix::identity;
 use geom::point::Point2D;
 use geom::size::Size2D;
@@ -60,15 +58,15 @@ impl ScriptListener for CompositorChan {
 
     fn set_ready_state(&self, ready_state: ReadyState) {
         let msg = ChangeReadyState(ready_state);
-        self.chan.send(msg);
+        self.send(msg);
     }
 
     fn invalidate_rect(&self, id: PipelineId, rect: Rect<uint>) {
-        self.chan.send(InvalidateRect(id, rect));
+        self.send(InvalidateRect(id, rect));
     }
 
     fn close(&self) {
-        self.chan.send(Exit);
+        self.send(Exit);
     }
 
 }
@@ -78,36 +76,36 @@ impl RenderListener for CompositorChan {
 
     fn get_gl_context(&self) -> AzGLContext {
         let (port, chan) = comm::stream();
-        self.chan.send(GetGLContext(chan));
+        self.send(GetGLContext(chan));
         port.recv()
     }
 
     fn paint(&self, id: PipelineId, layer_buffer_set: ~LayerBufferSet, epoch: Epoch) {
-        self.chan.send(Paint(id, layer_buffer_set, epoch))
+        self.send(Paint(id, layer_buffer_set, epoch))
     }
 
     fn new_layer(&self, id: PipelineId, page_size: Size2D<uint>) {
         let Size2D { width, height } = page_size;
-        self.chan.send(NewLayer(id, Size2D(width as f32, height as f32)))
+        self.send(NewLayer(id, Size2D(width as f32, height as f32)))
     }
     fn set_layer_page_size(&self, id: PipelineId, page_size: Size2D<uint>, epoch: Epoch) {
         let Size2D { width, height } = page_size;
-        self.chan.send(SetLayerPageSize(id, Size2D(width as f32, height as f32), epoch))
+        self.send(SetLayerPageSize(id, Size2D(width as f32, height as f32), epoch))
     }
     fn set_layer_clip_rect(&self, id: PipelineId, new_rect: Rect<uint>) {
         let new_rect = Rect(Point2D(new_rect.origin.x as f32,
                                     new_rect.origin.y as f32),
                             Size2D(new_rect.size.width as f32,
                                    new_rect.size.height as f32));
-        self.chan.send(SetLayerClipRect(id, new_rect))
+        self.send(SetLayerClipRect(id, new_rect))
     }
 
     fn delete_layer(&self, id: PipelineId) {
-        self.chan.send(DeleteLayer(id))
+        self.send(DeleteLayer(id))
     }
 
     fn set_render_state(&self, render_state: RenderState) {
-        self.chan.send(ChangeRenderState(render_state))
+        self.send(ChangeRenderState(render_state));
     }
 }
 
@@ -119,8 +117,13 @@ impl CompositorChan {
         }
     }
 
+    /// Messages sent to the compositor need to deal with the compositor
+    /// thread often being blocked waiting for window events.
+    /// This function enqueues the message on the channel and then wakes
+    /// up the compositor thread.
     pub fn send(&self, msg: Msg) {
         self.chan.send(msg);
+        Window::wakeup();
     }
 
     pub fn get_size(&self) -> Size2D<int> {
@@ -521,7 +524,6 @@ impl CompositorTask {
         };
 
         // Enter the main event loop.
-        let mut tm = Timer::new().unwrap();
         while !done {
             // Check for new messages coming from the rendering task.
             check_for_messages(&self.port);
@@ -533,8 +535,6 @@ impl CompositorTask {
                 recomposite = false;
                 composite();
             }
-
-            tm.sleep(10);
 
             // If a pinch-zoom happened recently, ask for tiles at the new resolution
             if zoom_action && precise_time_s() - zoom_time > 0.3 {

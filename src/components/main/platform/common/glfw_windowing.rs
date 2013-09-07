@@ -4,6 +4,8 @@
 
 //! A windowing implementation using GLFW.
 
+use cocoa::base;
+
 use windowing::{ApplicationMethods, WindowEvent, WindowMethods};
 use windowing::{IdleWindowEvent, ResizeWindowEvent, LoadUrlWindowEvent, MouseWindowEventClass};
 use windowing::{ScrollWindowEvent, ZoomWindowEvent, NavigationWindowEvent, FinishedWindowEvent};
@@ -29,6 +31,13 @@ impl ApplicationMethods for Application {
         glfw::init();
         Application
     }
+
+    /// If we are currently blocked in a call to wait_events(),
+    /// wakeup will generate a windowing system event that will
+    /// wake the thread.
+    fn wakeup() {
+        // TODO
+    }
 }
 
 impl Drop for Application {
@@ -51,6 +60,29 @@ pub struct Window {
     ready_state: ReadyState,
     render_state: RenderState,
     throbber_frame: u8,
+}
+
+impl Window {
+    /// If we are currently blocked in a call to wait_events(),
+    /// wakeup will generate a windowing system event that will
+    /// wake the thread.
+#[cfg(target_os="linux")]
+    pub fn wakeup() {
+        
+        let monitor = glfw::Monitor::get_primary();
+        match monitor {
+            Ok(monitor) => {
+                let gr = monitor.get_gamma_ramp();
+                monitor.set_gamma_ramp(&gr)
+            },
+            _ => ()
+        };
+    }
+
+#[cfg(target_os="macos")]
+    pub fn wakeup() {
+        base::wakeup();
+    }
 }
 
 impl WindowMethods<Application> for Window {
@@ -132,7 +164,7 @@ impl WindowMethods<Application> for Window {
         if !self.event_queue.is_empty() {
             return self.event_queue.shift()
         }
-        glfw::poll_events();
+        glfw::wait_events();
         self.throbber_frame = (self.throbber_frame + 1) % (THROBBER.len() as u8);
         self.update_window_title();
         if self.glfw_window.should_close() {

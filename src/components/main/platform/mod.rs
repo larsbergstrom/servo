@@ -19,4 +19,3 @@ pub mod common {
     #[cfg(shared_gl_windowing)]
     pub mod shared_gl_windowing;
 }
-

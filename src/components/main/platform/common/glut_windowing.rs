@@ -121,12 +121,17 @@ impl WindowMethods<Application> for Window {
         if !self.event_queue.is_empty() {
             return self.event_queue.shift()
         }
+        // TODO: change to block
         glut::check_loop();
         if !self.event_queue.is_empty() {
             self.event_queue.shift()
         } else {
             IdleWindowEvent
         }
+    }
+
+    fn wakeup() {
+        // TODO: make unblock
     }
 
     /// Sets the ready state.
