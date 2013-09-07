@@ -47,10 +47,6 @@ pub enum WindowEvent {
 /// Methods for an abstract Application.
 pub trait ApplicationMethods {
     fn new() -> Self;
-
-    /// If recv is currently blocking in the event loop, it breaks the
-    /// window out of that loop.
-    fn wakeup() -> ();
 }
 
 pub trait WindowMethods<A> {

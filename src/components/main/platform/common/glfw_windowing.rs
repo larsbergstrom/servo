@@ -31,13 +31,6 @@ impl ApplicationMethods for Application {
         glfw::init();
         Application
     }
-
-    /// If we are currently blocked in a call to wait_events(),
-    /// wakeup will generate a windowing system event that will
-    /// wake the thread.
-    fn wakeup() {
-        // TODO
-    }
 }
 
 impl Drop for Application {
@@ -68,15 +61,7 @@ impl Window {
     /// wake the thread.
 #[cfg(target_os="linux")]
     pub fn wakeup() {
-        
-        let monitor = glfw::Monitor::get_primary();
-        match monitor {
-            Ok(monitor) => {
-                let gr = monitor.get_gamma_ramp();
-                monitor.set_gamma_ramp(&gr)
-            },
-            _ => ()
-        };
+        // TODO(larsberg): implement the X11 version
     }
 
 #[cfg(target_os="macos")]
