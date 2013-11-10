@@ -467,6 +467,15 @@ impl InlineFlow {
         }
     }
 
+    pub fn from_boxes(base: FlowData, boxes: ~[@RenderBox]) -> InlineFlow {
+        InlineFlow {
+            base: base,
+            boxes: boxes,
+            lines: ~[],
+            elems: ElementMapping::new(),
+        }
+    }
+
     pub fn teardown(&mut self) {
         for box in self.boxes.iter() {
             box.teardown();

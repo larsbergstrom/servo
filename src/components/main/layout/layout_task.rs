@@ -7,38 +7,32 @@
 
 use css::matching::MatchMethods;
 use css::select::new_stylist;
-use layout::extra::LayoutAuxMethods;
 use layout::box_builder::LayoutTreeBuilder;
+use layout::construct::{FlowConstructionResult, FlowConstructor, NoConstructionResult};
 use layout::context::LayoutContext;
 use layout::display_list_builder::{DisplayListBuilder};
+use layout::extra::LayoutAuxMethods;
 use layout::flow::{FlowContext, ImmutableFlowUtils, MutableFlowUtils, PreorderFlowTraversal};
 use layout::flow::{PostorderFlowTraversal};
 use layout::flow;
 use layout::incremental::{RestyleDamage, BubbleWidths};
 use layout::util::LayoutDataAccess;
 
-use std::cast::transmute;
-use std::cell::Cell;
-use std::comm::Port;
-use std::task;
 use extra::arc::{Arc, RWArc};
+use extra::url::Url;
 use geom::point::Point2D;
 use geom::rect::Rect;
 use geom::size::Size2D;
 use gfx::display_list::DisplayList;
 use gfx::font_context::FontContext;
-use servo_util::geometry::Au;
 use gfx::opts::Opts;
 use gfx::render_task::{RenderMsg, RenderChan, RenderLayer};
 use gfx::render_task;
-use style::Stylist;
-use style::Stylesheet;
-use style::AuthorOrigin;
 use script::dom::event::ReflowEvent;
 use script::dom::node::{AbstractNode, LayoutView};
 use script::layout_interface::{AddStylesheetMsg, ContentBoxQuery};
-use script::layout_interface::{HitTestQuery, ContentBoxResponse, HitTestResponse};
 use script::layout_interface::{ContentBoxesQuery, ContentBoxesResponse, ExitMsg, LayoutQuery};
+use script::layout_interface::{HitTestQuery, ContentBoxResponse, HitTestResponse};
 use script::layout_interface::{MatchSelectorsDocumentDamage, Msg};
 use script::layout_interface::{QueryMsg, Reflow, ReflowDocumentDamage};
 use script::layout_interface::{ReflowForDisplay, ReflowMsg};
@@ -46,11 +40,19 @@ use script::script_task::{ReflowCompleteMsg, ScriptChan, SendEventMsg};
 use servo_msg::constellation_msg::{ConstellationChan, PipelineId};
 use servo_net::image_cache_task::{ImageCacheTask, ImageResponseMsg};
 use servo_net::local_image_cache::{ImageResponder, LocalImageCache};
-use servo_util::tree::TreeNodeRef;
+use servo_util::geometry::Au;
+use servo_util::range::Range;
 use servo_util::time::{ProfilerChan, profile};
 use servo_util::time;
-use servo_util::range::Range;
-use extra::url::Url;
+use servo_util::tree::TreeNodeRef;
+use std::cast::transmute;
+use std::cell::Cell;
+use std::comm::Port;
+use std::task;
+use std::util;
+use style::AuthorOrigin;
+use style::Stylesheet;
+use style::Stylist;
 
 struct LayoutTask {
     id: PipelineId,
@@ -301,6 +303,30 @@ impl LayoutTask {
         }
     }
 
+    /// Builds the flow tree.
+    ///
+    /// This corresponds to the various `nsCSSFrameConstructor` methods in Gecko or
+    /// `createRendererIfNeeded` in WebKit and should be benchmarked against them. It is marked
+    /// `#[inline(never)]` to aid this benchmarking in sampling profilers.
+    #[inline(never)]
+    fn construct_flow_tree(&self, layout_context: &LayoutContext, node: AbstractNode<LayoutView>)
+                           -> ~FlowContext: {
+        node.traverse_postorder(&FlowConstructor::init(layout_context));
+
+        let result = match *node.mutate_layout_data().ptr {
+            Some(ref mut layout_data) => {
+                util::replace(&mut layout_data.flow_construction_result, NoConstructionResult)
+            }
+            None => fail!("no layout data for root node"),
+        };
+        let mut flow = match result {
+            FlowConstructionResult(flow) => flow,
+            _ => fail!("Flow construction didn't result in a flow at the root of the tree!"),
+        };
+        flow.mark_as_root();
+        flow
+    }
+
     /// Performs layout constraint solving.
     ///
     /// This corresponds to `Reflow()` in Gecko and `layout()` in WebKit/Blink and should be
@@ -370,16 +396,9 @@ impl LayoutTask {
         }
 
         // Construct the flow tree.
-        let mut layout_root: ~FlowContext: = do profile(time::LayoutTreeBuilderCategory,
-                                                   self.profiler_chan.clone()) {
-            let mut builder = LayoutTreeBuilder::new();
-            let layout_root: ~FlowContext: = match builder.construct_trees(&layout_ctx, *node) {
-                Ok(root) => root,
-                Err(*) => fail!(~"Root flow should always exist")
-            };
-
-            layout_root
-        };
+        let mut layout_root = profile(time::LayoutTreeBuilderCategory,
+                                      self.profiler_chan.clone(),
+                                      || self.construct_flow_tree(&layout_ctx, *node));
 
         // Propagate damage.
         layout_root.traverse_preorder(&mut PropagateDamageTraversal {
@@ -421,22 +440,26 @@ impl LayoutTask {
                     };
 
                     // FIXME(pcwalton): Why are we cloning the display list here?!
-                    let layout_data = node.layout_data();
-                    let boxes = layout_data.boxes.mutate();
-                    boxes.ptr.display_list = Some(display_list.clone());
+                    match *node.mutate_layout_data().ptr {
+                        Some(ref mut layout_data) => {
+                            let boxes = &mut layout_data.boxes;
+                            boxes.display_list = Some(display_list.clone());
 
-                    if boxes.ptr.range.is_none() {
-                        debug!("Creating initial range for node");
-                        boxes.ptr.range = Some(Range::new(i,1));
-                    } else {
-                        debug!("Appending item to range");
-                        unsafe {
-                            let old_node: AbstractNode<()> = transmute(node);
-                            assert!(old_node == display_list.get().list[i-1].base().extra,
-                            "Non-contiguous arrangement of display items");
+                            if boxes.range.is_none() {
+                                debug!("Creating initial range for node");
+                                boxes.range = Some(Range::new(i,1));
+                            } else {
+                                debug!("Appending item to range");
+                                unsafe {
+                                    let old_node: AbstractNode<()> = transmute(node);
+                                    assert!(old_node == display_list.get().list[i-1].base().extra,
+                                    "Non-contiguous arrangement of display items");
+                                }
+
+                                boxes.range.unwrap().extend_by(1);
+                            }
                         }
-
-                        boxes.ptr.range.unwrap().extend_by(1);
+                        None => fail!("no layout data"),
                     }
                 }
 
@@ -472,8 +495,8 @@ impl LayoutTask {
 
                 fn box_for_node(node: AbstractNode<LayoutView>) -> Option<Rect<Au>> {
                     // FIXME(pcwalton): Why are we cloning the display list here?!
-                    let boxes = node.layout_data().boxes.borrow();
-                    let boxes = boxes.ptr;
+                    let layout_data = node.borrow_layout_data();
+                    let boxes = &layout_data.ptr.as_ref().unwrap().boxes;
                     match (boxes.display_list.clone(), boxes.range) {
                         (Some(display_list), Some(range)) => {
                             let mut rect: Option<Rect<Au>> = None;
@@ -516,8 +539,8 @@ impl LayoutTask {
 
                 fn boxes_for_node(node: AbstractNode<LayoutView>, mut box_accumulator: ~[Rect<Au>])
                                   -> ~[Rect<Au>] {
-                    let boxes = node.layout_data().boxes.borrow();
-                    let boxes = boxes.ptr;
+                    let layout_data = node.borrow_layout_data();
+                    let boxes = &layout_data.ptr.as_ref().unwrap().boxes;
                     match (boxes.display_list.clone(), boxes.range) {
                         (Some(display_list), Some(range)) => {
                             for i in range.eachi() {

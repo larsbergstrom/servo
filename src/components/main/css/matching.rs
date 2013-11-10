@@ -38,7 +38,13 @@ impl MatchMethods for AbstractNode<LayoutView> {
             };
             stylist.get_applicable_declarations(self, style_attribute, None)
         };
-        self.layout_data().applicable_declarations.set(applicable_declarations)
+
+        match *self.mutate_layout_data().ptr {
+            Some(ref mut layout_data) => {
+                layout_data.applicable_declarations = applicable_declarations
+            }
+            None => fail!("no layout data")
+        }
     }
     fn match_subtree(&self, stylist: RWArc<Stylist>) {
         let num_tasks = default_sched_threads() * 2;
@@ -83,18 +89,25 @@ impl MatchMethods for AbstractNode<LayoutView> {
             None => None
         };
 
-        let layout_data = self.layout_data();
-        let computed_values = cascade(*layout_data.applicable_declarations.borrow().ptr,
-                                      parent_style);
-        let style = layout_data.style.mutate();
-        match *style.ptr {
-            None => (),
-            Some(ref previous_style) => {
-                self.set_restyle_damage(incremental::compute_damage(previous_style,
-                                                                    &computed_values))
+        let computed_values = unsafe {
+            cascade(self.borrow_layout_data_unchecked().as_ref().unwrap() .applicable_declarations,
+                    parent_style)
+        };
+
+        match *self.mutate_layout_data().ptr {
+            None => fail!("no layout data"),
+            Some(ref mut layout_data) => {
+                let style = &mut layout_data.style;
+                match *style {
+                    None => (),
+                    Some(ref previous_style) => {
+                        self.set_restyle_damage(incremental::compute_damage(previous_style,
+                                                                            &computed_values))
+                    }
+                }
+                *style = Some(computed_values)
             }
         }
-        *style.ptr = Some(computed_values)
     }
 
     fn cascade_subtree(&self, parent: Option<AbstractNode<LayoutView>>) {
