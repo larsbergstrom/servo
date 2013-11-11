@@ -135,23 +135,45 @@ impl<'self> FlowConstructor<'self> {
         }
     }
 
-    /// Builds a flow for an unfloated node with `display: block`. This yields a `BlockFlow`.
+    /// Builds a flow for an unfloated node with `display: block`. This yields a `BlockFlow` with
+    /// possibly other `BlockFlow`s or `InlineFlow`s underneath it, depending on whether {ib}
+    /// splits needed to happen.
     fn build_flow_for_unfloated_block(&self, node: AbstractNode<LayoutView>) {
+        // Create the initial flow.
         let base = FlowData::new(self.next_flow_id(), node);
         let box = self.build_box_for_node(node);
         let mut flow = ~BlockFlow::from_box(base, box) as ~FlowContext:;
 
+        // Gather up boxes for the inline flow we might need to create.
+        let mut opt_boxes_for_inline_flow = None;
+
+        // Attach block flows and gather up boxes.
         for kid in node.children() {
             match kid.swap_out_construction_result() {
                 NoConstructionResult => {}
                 FlowConstructionResult(kid_flow) => flow.add_new_child(kid_flow),
                 ConstructionItemConstructionResult(InlineBoxesConstructionItem(boxes)) => {
-                    // Make an `InlineFlow` to handle all the boxes we saw and append it.
-                    let kid_base = FlowData::new(self.next_flow_id(), node);
-                    let mut kid_flow = ~InlineFlow::from_boxes(kid_base, boxes) as ~FlowContext:;
-                    TextRunScanner::new().scan_for_runs(self.layout_context, kid_flow);
-                    flow.add_new_child(kid_flow)
+                    // Add the boxes to the list we're maintaining.
+                    match opt_boxes_for_inline_flow {
+                        None => opt_boxes_for_inline_flow = Some(boxes),
+                        Some(ref mut boxes_for_inline_flow) => {
+                            boxes_for_inline_flow.push_all_move(boxes)
+                        }
+                    }
                 }
+            }
+        }
+
+        // Were there any inline boxes? If so, create the inline flow.
+        //
+        // FIXME(pcwalton): This is not right as it doesn't handle {ib} splits correctly.
+        match opt_boxes_for_inline_flow {
+            None => {}
+            Some(boxes) => {
+                let inline_base = FlowData::new(self.next_flow_id(), node);
+                let mut inline_flow = ~InlineFlow::from_boxes(inline_base, boxes) as ~FlowContext:;
+                TextRunScanner::new().scan_for_runs(self.layout_context, inline_flow);
+                flow.add_new_child(inline_flow)
             }
         }
 

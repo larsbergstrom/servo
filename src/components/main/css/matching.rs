@@ -47,7 +47,8 @@ impl MatchMethods for AbstractNode<LayoutView> {
         }
     }
     fn match_subtree(&self, stylist: RWArc<Stylist>) {
-        let num_tasks = default_sched_threads() * 2;
+        //let num_tasks = default_sched_threads() * 2;
+        let num_tasks = 1;
         let mut node_count = 0;
         let mut nodes_per_task = vec::from_elem(num_tasks, ~[]);
 
@@ -78,6 +79,7 @@ impl MatchMethods for AbstractNode<LayoutView> {
                 num_spawned += 1;
             }
         }
+        assert!(num_spawned == 1);
         for _ in range(0, num_spawned) {
             port.recv();
         }
@@ -90,7 +92,7 @@ impl MatchMethods for AbstractNode<LayoutView> {
         };
 
         let computed_values = unsafe {
-            cascade(self.borrow_layout_data_unchecked().as_ref().unwrap() .applicable_declarations,
+            cascade(self.borrow_layout_data_unchecked().as_ref().unwrap().applicable_declarations,
                     parent_style)
         };
 
@@ -101,8 +103,9 @@ impl MatchMethods for AbstractNode<LayoutView> {
                 match *style {
                     None => (),
                     Some(ref previous_style) => {
-                        self.set_restyle_damage(incremental::compute_damage(previous_style,
-                                                                            &computed_values))
+                        layout_data.restyle_damage =
+                            Some(incremental::compute_damage(previous_style,
+                                                             &computed_values).to_int())
                     }
                 }
                 *style = Some(computed_values)
