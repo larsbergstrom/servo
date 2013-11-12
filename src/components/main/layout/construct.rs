@@ -59,10 +59,107 @@ pub enum ConstructionResult {
 /// complete flow. Construction items bubble up the tree until they find a `FlowContext` to be
 /// attached to.
 enum ConstructionItem {
-    /// Inline boxes that have not yet found flows.
+    /// Inline boxes that have not yet found flows. The first parameter is the {ib} splits that
+    /// we've encountered so far, if any; the second parameter is the render boxes that succeed
+    /// the {ib} splits. If there were no {ib} splits, then we simply have a list of `RenderBox`es.
     ///
     /// TODO(pcwalton): Small vector optimization.
-    InlineBoxesConstructionItem(~[@RenderBox]),
+    InlineBoxesConstructionItem(Option<~[InlineBlockSplit]>, ~[@RenderBox]),
+}
+
+/// Represents an {ib} split that has not yet found the containing block that it belongs to. This
+/// is somewhat tricky. An example may be helpful. For this DOM fragment:
+///
+///     <span>
+///     A
+///     <div>B</div>
+///     C
+///     </span>
+///
+/// The resulting `ConstructionItem` for the outer `span` will be:
+///
+///     InlineBoxesConstructionItem(Some(~[
+///         InlineBlockSplit {
+///             predecessor_boxes: ~[
+///                 A
+///             ],
+///             block: BlockFlow {
+///                 B
+///             },
+///         }),~[
+///             C
+///         ])
+struct InlineBlockSplit {
+    /// The inline render boxes that precede the flow.
+    ///
+    /// TODO(pcwalton): Small vector optimization.
+    predecessor_boxes: ~[@RenderBox],
+
+    /// The flow that caused this {ib} split.
+    flow: ~FlowContext:,
+}
+
+/// Methods on optional vectors.
+///
+/// TODO(pcwalton): I think this will no longer be necessary once Rust #8981 lands.
+trait OptVector<T> {
+    /// Turns this optional vector into an owned one. If the optional vector is `None`, then this
+    /// simply returns an empty owned vector.
+    fn to_vec(self) -> ~[T];
+
+    /// Pushes a value onto this vector.
+    fn push(&mut self, value: T);
+
+    /// Pushes a vector onto this vector, consuming the original.
+    fn push_all_move(&mut self, values: ~[T]);
+
+    /// Pushes an optional vector onto this vector, consuming the original.
+    fn push_opt_vec_move(&mut self, values: Self);
+
+    /// Returns the length of this optional vector.
+    fn len(&self) -> uint;
+}
+
+impl<T> OptVector<T> for Option<~[T]> {
+    #[inline]
+    fn to_vec(self) -> ~[T] {
+        match self {
+            None => ~[],
+            Some(vector) => vector,
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, value: T) {
+        match *self {
+            None => *self = Some(~[value]),
+            Some(ref mut vector) => vector.push(value),
+        }
+    }
+
+    #[inline]
+    fn push_all_move(&mut self, values: ~[T]) {
+        match *self {
+            None => *self = Some(values),
+            Some(ref mut vector) => vector.push_all_move(values),
+        }
+    }
+
+    #[inline]
+    fn push_opt_vec_move(&mut self, values: Option<~[T]>) {
+        match values {
+            None => {}
+            Some(values) => self.push_all_move(values),
+        }
+    }
+
+    #[inline]
+    fn len(&self) -> uint {
+        match *self {
+            None => 0,
+            Some(ref vector) => vector.len(),
+        }
+    }
 }
 
 /// An object that knows how to create flows.
@@ -135,6 +232,25 @@ impl<'self> FlowConstructor<'self> {
         }
     }
 
+    /// Creates an inline flow from a set of inline boxes.
+    ///
+    /// `#[inline(always)]` because this is performance critical and LLVM will not inline it
+    /// otherwise.
+    #[inline(always)]
+    fn flush_inline_boxes_to_block_flow(&self,
+                                        opt_boxes: &mut Option<~[@RenderBox]>,
+                                        flow: &mut ~FlowContext:,
+                                        node: AbstractNode<LayoutView>) {
+        let opt_boxes = util::replace(opt_boxes, None);
+        if opt_boxes.len() > 0 {
+            let inline_base = FlowData::new(self.next_flow_id(), node);
+            let mut inline_flow = ~InlineFlow::from_boxes(inline_base, opt_boxes.to_vec()) as
+                ~FlowContext:;
+            TextRunScanner::new().scan_for_runs(self.layout_context, inline_flow);
+            flow.add_new_child(inline_flow)
+        }
+    }
+
     /// Builds a flow for an unfloated node with `display: block`. This yields a `BlockFlow` with
     /// possibly other `BlockFlow`s or `InlineFlow`s underneath it, depending on whether {ib}
     /// splits needed to happen.
@@ -144,71 +260,92 @@ impl<'self> FlowConstructor<'self> {
         let box = self.build_box_for_node(node);
         let mut flow = ~BlockFlow::from_box(base, box) as ~FlowContext:;
 
-        // Gather up boxes for the inline flow we might need to create.
+        // Gather up boxes for the inline flows we might need to create.
         let mut opt_boxes_for_inline_flow = None;
 
         // Attach block flows and gather up boxes.
         for kid in node.children() {
             match kid.swap_out_construction_result() {
                 NoConstructionResult => {}
-                FlowConstructionResult(kid_flow) => flow.add_new_child(kid_flow),
-                ConstructionItemConstructionResult(InlineBoxesConstructionItem(boxes)) => {
-                    // Add the boxes to the list we're maintaining.
-                    match opt_boxes_for_inline_flow {
-                        None => opt_boxes_for_inline_flow = Some(boxes),
-                        Some(ref mut boxes_for_inline_flow) => {
-                            boxes_for_inline_flow.push_all_move(boxes)
+                FlowConstructionResult(kid_flow) => {
+                    // Flush any inline boxes that we were gathering up. This handles {ib} splits.
+                    self.flush_inline_boxes_to_block_flow(&mut opt_boxes_for_inline_flow,
+                                                          &mut flow,
+                                                          node);
+                    flow.add_new_child(kid_flow)
+                }
+                ConstructionItemConstructionResult(InlineBoxesConstructionItem(opt_splits,
+                                                                               boxes)) => {
+                    // Add any {ib} splits.
+                    match opt_splits {
+                        None => {}
+                        Some(splits) => {
+                            for split in splits.move_iter() {
+                                // Pull apart the {ib} split object and push its predecessor boxes
+                                // onto the list.
+                                let InlineBlockSplit {
+                                    predecessor_boxes: predecessor_boxes,
+                                    flow: kid_flow
+                                } = split;
+                                opt_boxes_for_inline_flow.push_all_move(predecessor_boxes);
+
+                                // Flush any inline boxes that we were gathering up.
+                                self.flush_inline_boxes_to_block_flow(
+                                    &mut opt_boxes_for_inline_flow,
+                                    &mut flow,
+                                    node);
+
+                                // Push the flow generated by the {ib} split onto our list of
+                                // flows.
+                                flow.add_new_child(kid_flow);
+                            }
                         }
                     }
+
+                    // Add the boxes to the list we're maintaining.
+                    opt_boxes_for_inline_flow.push_all_move(boxes)
                 }
             }
         }
 
-        // Were there any inline boxes? If so, create the inline flow.
-        //
-        // FIXME(pcwalton): This is not right as it doesn't handle {ib} splits correctly.
-        match opt_boxes_for_inline_flow {
-            None => {}
-            Some(boxes) => {
-                let inline_base = FlowData::new(self.next_flow_id(), node);
-                let mut inline_flow = ~InlineFlow::from_boxes(inline_base, boxes) as ~FlowContext:;
-                TextRunScanner::new().scan_for_runs(self.layout_context, inline_flow);
-                flow.add_new_child(inline_flow)
-            }
-        }
+        // Perform a final flush of any inline boxes that we were gathering up to handle {ib}
+        // splits.
+        self.flush_inline_boxes_to_block_flow(&mut opt_boxes_for_inline_flow, &mut flow, node);
 
+        // Set the final flow construction result and leave.
         node.set_flow_construction_result(FlowConstructionResult(flow))
     }
 
     /// Concatenates the boxes of kids, adding in our own borders/padding/margins if necessary.
     fn build_boxes_for_inline_that_renders_kids(&self, node: AbstractNode<LayoutView>) {
-        // First, concatenate all the render boxes of our kids.
+        let mut opt_inline_block_splits = None;
         let mut opt_box_accumulator = None;
+
+        // Concatenate all the render boxes of our kids, creating {ib} splits as necessary.
         for kid in node.children() {
             match kid.swap_out_construction_result() {
                 NoConstructionResult => {}
-                FlowConstructionResult(_) => {
-                    // TODO(pcwalton): {ib} split. Handle this.
+                FlowConstructionResult(flow) => {
+                    // {ib} split. Flush the accumulator to our new split and make a new
+                    // accumulator to hold any subsequent `RenderBox`es we come across.
+                    let split = InlineBlockSplit {
+                        predecessor_boxes: util::replace(&mut opt_box_accumulator, None).to_vec(),
+                        flow: flow,
+                    };
+                    opt_inline_block_splits.push(split)
                 }
-                ConstructionItemConstructionResult(InlineBoxesConstructionItem(boxes)) => {
-                    match opt_box_accumulator {
-                        None => opt_box_accumulator = Some(boxes),
-                        Some(ref mut box_accumulator) => box_accumulator.push_all_move(boxes),
-                    }
+                ConstructionItemConstructionResult(InlineBoxesConstructionItem(_, boxes)) => {
+                    // TODO(pcwalton): Handle {ib} splits, presumably by bubbling them up.
+                    opt_box_accumulator.push_all_move(boxes)
                 }
             }
         }
 
-        // Pull out the box accumulator.
-        let box_accumulator = match opt_box_accumulator {
-            None => ~[],
-            Some(box_accumulator) => box_accumulator,
-        };
-
         // TODO(pcwalton): Add in our own borders/padding/margins if necessary.
 
         // Finally, make a new construction result.
-        let item = InlineBoxesConstructionItem(box_accumulator);
+        let item = InlineBoxesConstructionItem(opt_inline_block_splits,
+                                               opt_box_accumulator.to_vec());
         node.set_flow_construction_result(ConstructionItemConstructionResult(item))
     }
 
@@ -225,7 +362,7 @@ impl<'self> FlowConstructor<'self> {
         for kid in node.children() {
             kid.set_flow_construction_result(NoConstructionResult)
         }
-        let item = InlineBoxesConstructionItem(~[ self.build_box_for_node(node) ]);
+        let item = InlineBoxesConstructionItem(None, ~[ self.build_box_for_node(node) ]);
         node.set_flow_construction_result(ConstructionItemConstructionResult(item))
     }
 }
