@@ -61,12 +61,19 @@ pub enum ConstructionResult {
 /// complete flow. Construction items bubble up the tree until they find a `FlowContext` to be
 /// attached to.
 enum ConstructionItem {
-    /// Inline boxes that have not yet found flows. The first parameter is the {ib} splits that
-    /// we've encountered so far, if any; the second parameter is the render boxes that succeed
-    /// the {ib} splits. If there were no {ib} splits, then we simply have a list of `RenderBox`es.
+    /// Inline boxes and associated {ib} splits that have not yet found flows.
+    InlineBoxesConstructionItem(InlineBoxesConstructionResult),
+}
+
+/// Represents inline boxes and {ib} splits that are bubbling up from an inline.
+struct InlineBoxesConstructionResult {
+    /// Any {ib} splits that we're bubbling up.
     ///
     /// TODO(pcwalton): Small vector optimization.
-    InlineBoxesConstructionItem(Option<~[InlineBlockSplit]>, ~[@RenderBox]),
+    splits: Option<~[InlineBlockSplit]>,
+
+    /// Any render boxes that succeed the {ib} splits.
+    boxes: ~[@RenderBox],
 }
 
 /// Represents an {ib} split that has not yet found the containing block that it belongs to. This
@@ -234,34 +241,41 @@ impl<'self> FlowConstructor<'self> {
         }
     }
 
-    /// Creates an inline flow from a set of inline boxes.
+    /// Creates an inline flow from a set of inline boxes and adds it as a child of the given flow.
     ///
     /// `#[inline(always)]` because this is performance critical and LLVM will not inline it
     /// otherwise.
     #[inline(always)]
-    fn flush_inline_boxes_to_block_flow(&self,
-                                        opt_boxes: &mut Option<~[@RenderBox]>,
-                                        flow: &mut ~FlowContext:,
-                                        node: AbstractNode<LayoutView>) {
-        let opt_boxes = util::replace(opt_boxes, None);
-        if opt_boxes.len() > 0 {
+    fn flush_inline_boxes_to_flow(&self,
+                                  boxes: ~[@RenderBox],
+                                  flow: &mut ~FlowContext:,
+                                  node: AbstractNode<LayoutView>) {
+        if boxes.len() > 0 {
             let inline_base = FlowData::new(self.next_flow_id(), node);
-            let mut inline_flow = ~InlineFlow::from_boxes(inline_base, opt_boxes.to_vec()) as
-                ~FlowContext:;
+            let mut inline_flow = ~InlineFlow::from_boxes(inline_base, boxes) as ~FlowContext:;
             TextRunScanner::new().scan_for_runs(self.layout_context, inline_flow);
             flow.add_new_child(inline_flow)
         }
     }
 
-    /// Builds a flow for a node with `display: block`. This yields a `BlockFlow` with possibly
-    /// other `BlockFlow`s or `InlineFlow`s underneath it, depending on whether {ib} splits needed
-    /// to happen.
-    fn build_flow_for_block(&self, node: AbstractNode<LayoutView>) -> ~FlowContext: {
-        // Create the initial flow.
-        let base = FlowData::new(self.next_flow_id(), node);
-        let box = self.build_box_for_node(node);
-        let mut flow = ~BlockFlow::from_box(base, box) as ~FlowContext:;
+    /// Creates an inline flow from a set of inline boxes, if present, and adds it as a child of
+    /// the given flow.
+    fn flush_inline_boxes_to_flow_if_necessary(&self,
+                                               opt_boxes: &mut Option<~[@RenderBox]>,
+                                               flow: &mut ~FlowContext:,
+                                               node: AbstractNode<LayoutView>) {
+        let opt_boxes = util::replace(opt_boxes, None);
+        if opt_boxes.len() > 0 {
+            self.flush_inline_boxes_to_flow(opt_boxes.to_vec(), flow, node)
+        }
+    }
 
+    /// Builds the children flows underneath a node with `display: block`. After this call,
+    /// other `BlockFlow`s or `InlineFlow`s will be populated underneath this node, depending on
+    /// whether {ib} splits needed to happen.
+    fn build_children_of_block_flow(&self,
+                                    flow: &mut ~FlowContext:,
+                                    node: AbstractNode<LayoutView>) {
         // Gather up boxes for the inline flows we might need to create.
         let mut opt_boxes_for_inline_flow = None;
 
@@ -270,14 +284,18 @@ impl<'self> FlowConstructor<'self> {
             match kid.swap_out_construction_result() {
                 NoConstructionResult => {}
                 FlowConstructionResult(kid_flow) => {
-                    // Flush any inline boxes that we were gathering up. This handles {ib} splits.
-                    self.flush_inline_boxes_to_block_flow(&mut opt_boxes_for_inline_flow,
-                                                          &mut flow,
-                                                          node);
+                    // Flush any inline boxes that we were gathering up. This allows us to handle
+                    // {ib} splits.
+                    self.flush_inline_boxes_to_flow_if_necessary(&mut opt_boxes_for_inline_flow,
+                                                                 &mut flow,
+                                                                 node);
                     flow.add_new_child(kid_flow)
                 }
-                ConstructionItemConstructionResult(InlineBoxesConstructionItem(opt_splits,
-                                                                               boxes)) => {
+                ConstructionItemConstructionResult(InlineBoxesConstructionItem(
+                        InlineBoxesConstructionResult {
+                            splits: opt_splits,
+                            boxes: boxes
+                        })) => {
                     // Add any {ib} splits.
                     match opt_splits {
                         None => {}
@@ -292,7 +310,7 @@ impl<'self> FlowConstructor<'self> {
                                 opt_boxes_for_inline_flow.push_all_move(predecessor_boxes);
 
                                 // Flush any inline boxes that we were gathering up.
-                                self.flush_inline_boxes_to_block_flow(
+                                self.flush_inline_boxes_to_flow_if_necessary(
                                     &mut opt_boxes_for_inline_flow,
                                     &mut flow,
                                     node);
@@ -312,24 +330,38 @@ impl<'self> FlowConstructor<'self> {
 
         // Perform a final flush of any inline boxes that we were gathering up to handle {ib}
         // splits.
-        self.flush_inline_boxes_to_block_flow(&mut opt_boxes_for_inline_flow, &mut flow, node);
+        self.flush_inline_boxes_to_flow_if_necessary(&mut opt_boxes_for_inline_flow,
+                                                     &mut flow,
+                                                     node);
+    }
 
-        // Set the final flow construction result and leave.
+    /// Builds a flow for a node with `display: block`. This yields a `BlockFlow` with possibly
+    /// other `BlockFlow`s or `InlineFlow`s underneath it, depending on whether {ib} splits needed
+    /// to happen.
+    fn build_flow_for_block(&self, node: AbstractNode<LayoutView>) -> ~FlowContext: {
+        let base = FlowData::new(self.next_flow_id(), node);
+        let box = self.build_box_for_node(node);
+        let mut flow = ~BlockFlow::from_box(base, box) as ~FlowContext:;
+        self.build_children_of_block_flow(&mut flow, node);
         flow
     }
 
     /// Builds the flow for a node with `display: float`. This yields a `FloatFlow` with a
     /// `BlockFlow` underneath it.
     fn build_flow_for_floated_block(&self, node: AbstractNode<LayoutView>, float_type: FloatType) {
-        let block_flow = self.build_flow_for_block(node);
-
-        let float_flow_data = FlowData::new(self.next_flow_id(), node);
-        let mut float_flow = ~FloatFlow::new(inline_flow_data, float_type) as ~FlowContext:;
+        let base = FlowData::new(self.next_flow_id(), node);
+        let box = self.build_box_for_node(node);
+        let mut flow = ~FloatFlow::new(base, box) as ~FlowContext:;
+        self.build_children_of_block_flow(&mut flow, node);
+        flow
+        float_flow.add_new_child(block_flow);
         node.set_flow_construction_result(FlowConstructionResult(float_flow))
     }
 
     /// Concatenates the boxes of kids, adding in our own borders/padding/margins if necessary.
-    fn build_boxes_for_inline_that_renders_kids(&self, node: AbstractNode<LayoutView>) {
+    /// Returns the `InlineBoxesConstructionResult`.
+    fn build_boxes_for_nonreplaced_inline_content(&self, node: AbstractNode<LayoutView>)
+                                                  -> InlineBoxesConstructionResult {
         let mut opt_inline_block_splits = None;
         let mut opt_box_accumulator = None;
 
@@ -346,9 +378,34 @@ impl<'self> FlowConstructor<'self> {
                     };
                     opt_inline_block_splits.push(split)
                 }
-                ConstructionItemConstructionResult(InlineBoxesConstructionItem(_, boxes)) => {
-                    // TODO(pcwalton): Handle {ib} splits, presumably by bubbling them up.
-                    opt_box_accumulator.push_all_move(boxes)
+                ConstructionItemConstructionResult(InlineBoxesConstructionItem(
+                        InlineBoxesConstructionResult {
+                            splits: opt_splits,
+                            boxes: boxes
+                        })) => {
+                    // Bubble up {ib} splits.
+                    match opt_splits {
+                        None => {}
+                        Some(splits) => {
+                            for split in splits.move_iter() {
+                                let InlineBlockSplit {
+                                    predecessor_boxes: boxes,
+                                    flow: kid_flow
+                                } = split;
+                                opt_box_accumulator.push_all_move(boxes);
+
+                                let split = InlineBlockSplit {
+                                    predecessor_boxes: util::replace(&mut opt_box_accumulator,
+                                                                     None).to_vec(),
+                                    flow: kid_flow,
+                                };
+                                opt_inline_block_splits.push(split)
+                            }
+
+                            // Push residual boxes.
+                            opt_box_accumulator.push_all_move(boxes)
+                        }
+                    }
                 }
             }
         }
@@ -356,26 +413,81 @@ impl<'self> FlowConstructor<'self> {
         // TODO(pcwalton): Add in our own borders/padding/margins if necessary.
 
         // Finally, make a new construction result.
-        let item = InlineBoxesConstructionItem(opt_inline_block_splits,
-                                               opt_box_accumulator.to_vec());
-        node.set_flow_construction_result(ConstructionItemConstructionResult(item))
+        InlineBoxesConstructionResult {
+            splits: opt_inline_block_splits,
+            boxes: opt_box_accumulator.to_vec(),
+        }
     }
 
-    /// Builds one or more render boxes for a node with `display: inline`. This yields a
-    /// `InlineBoxesConstructionItem`.
-    fn build_boxes_for_inline(&self, node: AbstractNode<LayoutView>) {
-        // Does this node render its kids?
-        if node.renders_kids() {
-            // Go to a path that concatenates our kids' boxes.
-            return self.build_boxes_for_inline_that_renders_kids(node)
-        }
-
-        // Otherwise, just nuke our kids' boxes, create our `RenderBox`, and be done with it.
+    /// Creates an `InlineBoxesConstructionResult` for replaced content. Replaced content doesn't
+    /// render its children, so this just nukes a child's boxes and creates a `RenderBox`.
+    fn build_boxes_for_replaced_inline_content(&self, node: AbstractNode<LayoutView>)
+                                               -> InlineBoxesConstructionResult {
         for kid in node.children() {
             kid.set_flow_construction_result(NoConstructionResult)
         }
-        let item = InlineBoxesConstructionItem(None, ~[ self.build_box_for_node(node) ]);
-        node.set_flow_construction_result(ConstructionItemConstructionResult(item))
+        InlineBoxesConstructionResult {
+            splits: None,
+            boxes: ~[
+                self.build_box_for_node(node)
+            ],
+        }
+    }
+
+    /// Builds one or more render boxes for a node with `display: inline`. This yields a
+    /// `InlineBoxesConstructionResult`.
+    fn build_boxes_for_inline(&self, node: AbstractNode<LayoutView>)
+                              -> InlineBoxesConstructionResult {
+        // Is this node replaced content?
+        if !node.is_replaced_content() {
+            // Go to a path that concatenates our kids' boxes.
+            self.build_boxes_for_nonreplaced_inline_content(node)
+        } else {
+            // Otherwise, just nuke our kids' boxes, create our `RenderBox`, and be done with it.
+            self.build_boxes_for_replaced_inline_content(node)
+        }
+    }
+
+    /// Builds the flow for a floated inline. This results in a `FloatFlow` with either an
+    /// `InlineFlow` or a combination of `BlockFlow`s and `InlineFlow`s beneath it, depending on
+    /// whether we have {ib} splits.
+    fn build_flow_for_floated_inline(&self,
+                                     node: AbstractNode<LayoutView>,
+                                     float_type: FloatType) {
+        // Get the construction result.
+        let InlineBoxesConstructionResult {
+            splits: splits,
+            boxes: boxes
+        } = self.build_boxes_for_inline(node);
+
+        // Create the `FloatFlow`.
+        let float_flow_data = FlowData::new(self.next_flow_id(), node);
+        let mut float_flow = ~FloatFlow::new(float_flow_data, float_type) as ~FlowContext:;
+
+        // Handle {ib} splits, if necessary.
+        match splits {
+            None => {}
+            Some(splits) => {
+                // {ib} splits are present. Push `InlineFlow`s and `BlockFlow`s to accommodate them
+                // as necessary.
+                let box = self.build_box_for_node(node);
+                for split in splits.move_iter() {
+                    let InlineBlockSplit {
+                        predecessor_boxes: predecessor_boxes,
+                        flow: split_flow
+                    } = split;
+                    if predecessor_boxes.len() > 0 {
+                        self.flush_inline_boxes_to_flow(predecessor_boxes, &mut float_flow, node)
+                    }
+                    float_flow.add_new_child(split_flow)
+                }
+            }
+        }
+
+        self.flush_inline_boxes_to_flow(boxes, &mut float_flow, node);
+
+        // Finish up.
+        node.set_flow_construction_result(FlowConstructionResult(float_flow))
     }
 }
 
@@ -411,11 +523,17 @@ impl<'self> PostorderNodeTraversal for FlowConstructor<'self> {
             }
 
             (display::block, float_value) => {
-                self.build_flow_for_floated_block(node, FloatType::from_property(float_value))
+                let float_type = FloatType::from_property(float_value);
+                let flow = self.build_flow_for_floated_block(node, float_type);
+                node.set_flow_construction_result(FlowConstructionResult(flow))
             }
 
             // Inline items contribute render boxes.
-            (display::inline, _) => self.build_boxes_for_inline(node),
+            (display::inline, float::none) => {
+                let inline_box_construction_result = self.build_boxes_for_inline(node);
+                let item = InlineBoxesConstructionItem(inline_box_construction_result);
+                node.set_flow_construction_result(ConstructionItemConstructionResult(item))
+            }
 
             // TODO(pcwalton): Handle these.
             _ => {
@@ -431,11 +549,8 @@ impl<'self> PostorderNodeTraversal for FlowConstructor<'self> {
 
 /// A utility trait with some useful methods for node queries.
 trait NodeUtils {
-    /// Returns true if this node renders its kids and false otherwise.
-    ///
-    /// FIXME(pcwalton): Surely this has a name in the CSS spec. Is this what is known by "replaced
-    /// content", perhaps?
-    fn renders_kids(self) -> bool;
+    /// Returns true if this node doesn't render its kids and false otherwise.
+    fn is_replaced_content(self) -> bool;
 
     /// Sets the construction result of a flow.
     fn set_flow_construction_result(self, result: ConstructionResult);
@@ -446,15 +561,15 @@ trait NodeUtils {
 }
 
 impl NodeUtils for AbstractNode<LayoutView> {
-    fn renders_kids(self) -> bool {
+    fn is_replaced_content(self) -> bool {
         match self.type_id() {
             TextNodeTypeId |
             CommentNodeTypeId |
             DoctypeNodeTypeId |
             DocumentFragmentNodeTypeId |
             DocumentNodeTypeId(_) |
-            ElementNodeTypeId(HTMLImageElementTypeId) => false,
-            ElementNodeTypeId(_) => true
+            ElementNodeTypeId(HTMLImageElementTypeId) => true,
+            ElementNodeTypeId(_) => false,
         }
     }
 
