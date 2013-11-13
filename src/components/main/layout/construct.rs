@@ -25,6 +25,8 @@ use layout::block::BlockFlow;
 use layout::box::{GenericRenderBox, ImageRenderBox, RenderBox, RenderBoxBase};
 use layout::box::{UnscannedTextRenderBox};
 use layout::context::LayoutContext;
+use layout::float::FloatFlow;
+use layout::float_context::FloatType;
 use layout::flow::{FlowContext, FlowData, MutableFlowUtils};
 use layout::inline::InlineFlow;
 use layout::text::TextRunScanner;
@@ -251,10 +253,10 @@ impl<'self> FlowConstructor<'self> {
         }
     }
 
-    /// Builds a flow for an unfloated node with `display: block`. This yields a `BlockFlow` with
-    /// possibly other `BlockFlow`s or `InlineFlow`s underneath it, depending on whether {ib}
-    /// splits needed to happen.
-    fn build_flow_for_unfloated_block(&self, node: AbstractNode<LayoutView>) {
+    /// Builds a flow for a node with `display: block`. This yields a `BlockFlow` with possibly
+    /// other `BlockFlow`s or `InlineFlow`s underneath it, depending on whether {ib} splits needed
+    /// to happen.
+    fn build_flow_for_block(&self, node: AbstractNode<LayoutView>) -> ~FlowContext: {
         // Create the initial flow.
         let base = FlowData::new(self.next_flow_id(), node);
         let box = self.build_box_for_node(node);
@@ -313,7 +315,17 @@ impl<'self> FlowConstructor<'self> {
         self.flush_inline_boxes_to_block_flow(&mut opt_boxes_for_inline_flow, &mut flow, node);
 
         // Set the final flow construction result and leave.
-        node.set_flow_construction_result(FlowConstructionResult(flow))
+        flow
+    }
+
+    /// Builds the flow for a node with `display: float`. This yields a `FloatFlow` with a
+    /// `BlockFlow` underneath it.
+    fn build_flow_for_floated_block(&self, node: AbstractNode<LayoutView>, float_type: FloatType) {
+        let block_flow = self.build_flow_for_block(node);
+
+        let float_flow_data = FlowData::new(self.next_flow_id(), node);
+        let mut float_flow = ~FloatFlow::new(inline_flow_data, float_type) as ~FlowContext:;
+        node.set_flow_construction_result(FlowConstructionResult(float_flow))
     }
 
     /// Concatenates the boxes of kids, adding in our own borders/padding/margins if necessary.
@@ -393,7 +405,14 @@ impl<'self> PostorderNodeTraversal for FlowConstructor<'self> {
             }
 
             // Block flows that are not floated contribute block flow construction results.
-            (display::block, float::none) => self.build_flow_for_unfloated_block(node),
+            (display::block, float::none) => {
+                let flow = self.build_flow_for_block(node);
+                node.set_flow_construction_result(FlowConstructionResult(flow))
+            }
+
+            (display::block, float_value) => {
+                self.build_flow_for_floated_block(node, FloatType::from_property(float_value))
+            }
 
             // Inline items contribute render boxes.
             (display::inline, _) => self.build_boxes_for_inline(node),

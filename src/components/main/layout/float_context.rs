@@ -3,17 +3,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use geom::point::Point2D;
-use geom::size::Size2D;
 use geom::rect::Rect;
+use geom::size::Size2D;
 use servo_util::geometry::{Au, max, min};
+use std::i32::max_value;
 use std::util::replace;
 use std::vec;
-use std::i32::max_value;
+use style::computed_values::float;
 
 #[deriving(Clone)]
 pub enum FloatType {
     FloatLeft,
     FloatRight
+}
+
+impl FloatType {
+    pub fn from_property(property: float::T) -> FloatType {
+        match property {
+            float::none => fail!("can't create a float type from an unfloated property"),
+            float::left => FloatLeft,
+            float::right => FloatRight,
+        }
+    }
 }
 
 pub enum ClearType {
