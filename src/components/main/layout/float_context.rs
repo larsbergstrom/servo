@@ -42,13 +42,13 @@ struct FloatContextBase {
 }
 
 #[deriving(Clone)]
-struct FloatData{
+struct FloatData {
     bounds: Rect<Au>,
     f_type: FloatType
 }
 
 /// All information necessary to place a float
-pub struct PlacementInfo{
+pub struct PlacementInfo {
     width: Au,      // The dimensions of the float
     height: Au,
     ceiling: Au,    // The minimum top of the float, as determined by earlier elements
@@ -137,7 +137,7 @@ impl FloatContext {
     }
 }
 
-impl FloatContextBase{
+impl FloatContextBase {
     fn new(num_floats: uint) -> FloatContextBase {
         debug!("Creating float context of size {}", num_floats);
         FloatContextBase {
@@ -346,7 +346,7 @@ impl FloatContextBase{
             match maybe_location {
 
                 // If there are no floats blocking us, return the current location
-                // TODO(eatknson): integrate with overflow
+                // TODO(eatkinson): integrate with overflow
                 None => return match info.f_type { 
                     FloatLeft => Rect(Point2D(Au(0), float_y), 
                                       Size2D(info.max_width, Au(max_value))),

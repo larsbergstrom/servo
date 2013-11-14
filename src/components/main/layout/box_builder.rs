@@ -591,7 +591,6 @@ impl LayoutTreeBuilder {
                     parent_flow.remove_first();
                 }
 
-
                 do_remove = false;
                 let p_id = flow::base(parent_flow).id;
                 do parent_flow.with_last_child |mut last_child| {
