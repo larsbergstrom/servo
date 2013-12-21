@@ -39,8 +39,7 @@ use servo_util::{time, url};
 use std::comm::Port;
 use std::num::Orderable;
 use std::path::Path;
-use std::rt::io::timer::Timer;
-use std::vec;
+use std::io::timer::Timer;
 
 
 pub struct IOCompositor {
@@ -185,62 +184,66 @@ impl IOCompositor {
 
         // Drain compositor port, sometimes messages contain channels that are blocking
         // another task from finishing (i.e. SetIds)
-        while self.port.peek() { self.port.recv(); }
+        loop {
+            if self.port.try_recv().is_none() {
+                break;
+            }
+        }
     }
 
     fn handle_message(&mut self) {
-        while self.port.peek() {
-            match self.port.recv() {
-                Exit => {
-                    self.done = true
-                },
+        loop {
+            match self.port.try_recv() {
+                None => break,
 
-                ChangeReadyState(ready_state) => {
+                Some(Exit) => self.done = true,
+
+                Some(ChangeReadyState(ready_state)) => {
                     self.window.set_ready_state(ready_state);
                 }
 
-                ChangeRenderState(render_state) => {
+                Some(ChangeRenderState(render_state)) => {
                     self.change_render_state(render_state);
                 }
 
-                SetUnRenderedColor(_id, color) => {
+                Some(SetUnRenderedColor(_id, color)) => {
                     self.set_unrendered_color(_id, color);
                 }
 
 
-                SetIds(frame_tree, response_chan, new_constellation_chan) => {
+                Some(SetIds(frame_tree, response_chan, new_constellation_chan)) => {
                     self.set_ids(frame_tree, response_chan, new_constellation_chan);
                 }
 
-                GetGraphicsMetadata(chan) => {
+                Some(GetGraphicsMetadata(chan)) => {
                     chan.send(Some(azure_hl::current_graphics_metadata()));
                 }
 
-                NewLayer(_id, new_size) => {
+                Some(NewLayer(_id, new_size)) => {
                     self.create_new_layer(_id, new_size);
                 }
 
-                SetLayerPageSize(id, new_size, epoch) => {
+                Some(SetLayerPageSize(id, new_size, epoch)) => {
                     self.set_layer_page_size(id, new_size, epoch);
                 }
 
-                SetLayerClipRect(id, new_rect) => {
+                Some(SetLayerClipRect(id, new_rect)) => {
                     self.set_layer_clip_rect(id, new_rect);
                 }
 
-                DeleteLayer(id) => {
+                Some(DeleteLayer(id)) => {
                     self.delete_layer(id);
                 }
 
-                Paint(id, new_layer_buffer_set, epoch) => {
+                Some(Paint(id, new_layer_buffer_set, epoch)) => {
                     self.paint(id, new_layer_buffer_set, epoch);
                 }
 
-                InvalidateRect(id, rect) => {
+                Some(InvalidateRect(id, rect)) => {
                     self.invalidate_rect(id, rect);
                 }
 
-                ScrollFragmentPoint(id, point) => {
+                Some(ScrollFragmentPoint(id, point)) => {
                     self.scroll_fragment_to_point(id, point);
                 }
             }
@@ -594,7 +597,7 @@ impl IOCompositor {
     }
 
     fn composite(&mut self) {
-        do profile(time::CompositingCategory, self.profiler_chan.clone()) {
+        profile(time::CompositingCategory, self.profiler_chan.clone(), || {
             debug!("compositor: compositing");
             // Adjust the layer dimensions as necessary to correspond to the size of the window.
             self.scene.size = self.window.size();
@@ -609,7 +612,7 @@ impl IOCompositor {
                 None => {}
             }
             rendergl::render_scene(self.context, &self.scene);
-        }
+        });
 
         // Render to PNG. We must read from the back buffer (ie, before
         // self.window.present()) as OpenGL ES 2 does not have glReadBuffer().
@@ -627,9 +630,10 @@ impl IOCompositor {
             for y in range(0, height) {
                 let dst_start = y * stride;
                 let src_start = (height - y - 1) * stride;
-                vec::bytes::copy_memory(pixels.mut_slice(dst_start, dst_start + stride),
-                                        orig_pixels.slice(src_start, src_start + stride),
-                                        stride);
+                unsafe {
+                    pixels.mut_slice(dst_start, dst_start + stride)
+                        .copy_memory(orig_pixels.slice(src_start, src_start + stride).slice_to(stride));
+                }
             }
             let img = png::Image {
                 width: width as u32,

@@ -46,14 +46,13 @@ use servo_util::time::{ProfilerChan, profile};
 use servo_util::time;
 use std::cast::transmute;
 use std::cast;
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::comm::Port;
-use std::task;
 use std::util;
 use style::{AuthorOrigin, Stylesheet, Stylist};
 
 /// Information needed by the layout task.
-struct LayoutTask {
+pub struct LayoutTask {
     /// The ID of the pipeline that we belong to.
     id: PipelineId,
 
@@ -132,9 +131,9 @@ impl PreorderFlowTraversal for PropagateDamageTraversal {
 
 /// The bubble-widths traversal, the first part of layout computation. This computes preferred
 /// and intrinsic widths and bubbles them up the tree.
-struct BubbleWidthsTraversal<'self>(&'self mut LayoutContext);
+struct BubbleWidthsTraversal<'a>(&'a mut LayoutContext);
 
-impl<'self> PostorderFlowTraversal for BubbleWidthsTraversal<'self> {
+impl<'a> PostorderFlowTraversal for BubbleWidthsTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
         flow.bubble_widths(**self);
@@ -151,9 +150,9 @@ impl<'self> PostorderFlowTraversal for BubbleWidthsTraversal<'self> {
 }
 
 /// The assign-widths traversal. In Gecko this corresponds to `Reflow`.
-struct AssignWidthsTraversal<'self>(&'self mut LayoutContext);
+struct AssignWidthsTraversal<'a>(&'a mut LayoutContext);
 
-impl<'self> PreorderFlowTraversal for AssignWidthsTraversal<'self> {
+impl<'a> PreorderFlowTraversal for AssignWidthsTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
         flow.assign_widths(**self);
@@ -164,9 +163,9 @@ impl<'self> PreorderFlowTraversal for AssignWidthsTraversal<'self> {
 /// The assign-heights-and-store-overflow traversal, the last (and most expensive) part of layout
 /// computation. Determines the final heights for all layout objects, computes positions, and
 /// computes overflow regions. In Gecko this corresponds to `FinishAndStoreOverflow`.
-struct AssignHeightsAndStoreOverflowTraversal<'self>(&'self mut LayoutContext);
+struct AssignHeightsAndStoreOverflowTraversal<'a>(&'a mut LayoutContext);
 
-impl<'self> PostorderFlowTraversal for AssignHeightsAndStoreOverflowTraversal<'self> {
+impl<'a> PostorderFlowTraversal for AssignHeightsAndStoreOverflowTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
         flow.assign_height(**self);
@@ -186,10 +185,10 @@ struct LayoutImageResponder {
 }
 
 impl ImageResponder for LayoutImageResponder {
-    fn respond(&self) -> ~fn(ImageResponseMsg) {
+    fn respond(&self) -> proc(ImageResponseMsg) {
         let id = self.id.clone();
         let script_chan = self.script_chan.clone();
-        let f: ~fn(ImageResponseMsg) = |_| {
+        let f: proc(ImageResponseMsg) = proc(_) {
             script_chan.send(SendEventMsg(id.clone(), ReflowEvent))
         };
         f
@@ -207,20 +206,16 @@ impl LayoutTask {
                   opts: Opts,
                   profiler_chan: ProfilerChan,
                   shutdown_chan: Chan<()>) {
-        spawn_with!(task::task(), [port, constellation_chan, script_chan,
-                                   render_chan, img_cache_task, profiler_chan, shutdown_chan], {
-            { // Ensures LayoutTask gets destroyed before we send the shutdown message
-                let mut layout = LayoutTask::new(id,
-                                                 port,
-                                                 constellation_chan,
-                                                 script_chan,
-                                                 render_chan,
-                                                 img_cache_task,
-                                                 &opts,
-                                                 profiler_chan);
-                layout.start();
-            }
-
+        spawn(proc() {
+            let mut layout = LayoutTask::new(id,
+                                             port,
+                                             constellation_chan,
+                                             script_chan,
+                                             render_chan,
+                                             img_cache_task,
+                                             &opts,
+                                             profiler_chan);
+            layout.start();
             shutdown_chan.send(());
         });
     }
@@ -281,17 +276,15 @@ impl LayoutTask {
         match self.port.recv() {
             AddStylesheetMsg(sheet) => self.handle_add_stylesheet(sheet),
             ReflowMsg(data) => {
-                let data = Cell::new(data);
-
-                do profile(time::LayoutPerformCategory, self.profiler_chan.clone()) {
-                    self.handle_reflow(data.take());
-                }
+                profile(time::LayoutPerformCategory, self.profiler_chan.clone(), || {
+                    self.handle_reflow(data);
+                });
             }
             QueryMsg(query) => {
-                let query = Cell::new(query);
-                do profile(time::LayoutQueryCategory, self.profiler_chan.clone()) {
-                    self.handle_query(query.take());
-                }
+                let mut query = Some(query);
+                profile(time::LayoutQueryCategory, self.profiler_chan.clone(), || {
+                    self.handle_query(query.take_unwrap());
+                });
             }
             ReapLayoutDataMsg(dead_layout_data) => {
                 unsafe {
@@ -340,16 +333,16 @@ impl LayoutTask {
     /// Shuts down the layout task now. If there are any DOM nodes left, layout will now (safely)
     /// crash.
     fn exit_now(&mut self) {
-        let (response_port, response_chan) = stream();
+        let (response_port, response_chan) = Chan::new();
         self.render_chan.send(render_task::ExitMsg(response_chan));
         response_port.recv()
     }
 
     fn handle_add_stylesheet(&mut self, sheet: Stylesheet) {
-        let sheet = Cell::new(sheet);
-        do self.stylist.write |stylist| {
-            stylist.add_stylesheet(sheet.take(), AuthorOrigin)
-        }
+        let mut sheet = Some(sheet);
+        self.stylist.write(|stylist| {
+            stylist.add_stylesheet(sheet.take_unwrap(), AuthorOrigin)
+        });
     }
 
     /// Builds the flow tree.
@@ -436,18 +429,18 @@ impl LayoutTask {
         // Initialize layout data for each node.
         //
         // FIXME: This is inefficient. We don't need an entire traversal to do this!
-        do profile(time::LayoutAuxInitCategory, self.profiler_chan.clone()) {
+        profile(time::LayoutAuxInitCategory, self.profiler_chan.clone(), || {
             node.initialize_style_for_subtree();
-        }
+        });
 
         // Perform CSS selector matching if necessary.
         match data.damage.level {
             ReflowDocumentDamage => {}
             _ => {
-                do profile(time::LayoutSelectorMatchCategory, self.profiler_chan.clone()) {
+                profile(time::LayoutSelectorMatchCategory, self.profiler_chan.clone(), || {
                     node.match_subtree(self.stylist.clone());
                     node.cascade_subtree(None);
-                }
+                });
             }
         }
 
@@ -464,25 +457,25 @@ impl LayoutTask {
 
         // Perform the primary layout passes over the flow tree to compute the locations of all
         // the boxes.
-        do profile(time::LayoutMainCategory, self.profiler_chan.clone()) {
+        profile(time::LayoutMainCategory, self.profiler_chan.clone(), || {
             self.solve_constraints(layout_root, &mut layout_ctx)
-        }
+        });
 
         debug!("layout: constraint solving done:");
         debug!("{:?}", layout_root.dump());
 
         // Build the display list if necessary, and send it to the renderer.
         if data.goal == ReflowForDisplay {
-            do profile(time::LayoutDispListBuildCategory, self.profiler_chan.clone()) {
+            profile(time::LayoutDispListBuildCategory, self.profiler_chan.clone(), || {
                 let root_size = flow::base(layout_root).position.size;
-                let display_list = ~Cell::new(DisplayList::<OpaqueNode>::new());
+                let display_list = ~RefCell::new(DisplayList::<OpaqueNode>::new());
                 let dirty = flow::base(layout_root).position.clone();
                 let display_list_builder = DisplayListBuilder {
                     ctx: &layout_ctx,
                 };
                 layout_root.build_display_list(&display_list_builder, &dirty, display_list);
 
-                let display_list = Arc::new(display_list.take());
+                let display_list = Arc::new(display_list.unwrap());
 
                 let mut color = color::rgba(255.0, 255.0, 255.0, 255.0);
 
@@ -516,7 +509,7 @@ impl LayoutTask {
                 self.display_list = Some(display_list.clone());
 
                 self.render_chan.send(RenderMsg(render_layer));
-            } // time(layout: display list building)
+            });
         }
 
         // Tell script that we're done.

@@ -13,7 +13,7 @@ pub trait LayoutAuxMethods {
     fn initialize_style_for_subtree(self);
 }
 
-impl<'self> LayoutAuxMethods for LayoutNode<'self> {
+impl<'ln> LayoutAuxMethods for LayoutNode<'ln> {
     /// Resets layout data and styles for the node.
     ///
     /// FIXME(pcwalton): Do this as part of box building instead of in a traversal.

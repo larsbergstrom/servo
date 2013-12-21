@@ -22,7 +22,6 @@ use layout_interface::{ContentBoxesResponse, ContentChangedDocumentDamage};
 use layout_interface::{MatchSelectorsDocumentDamage};
 use style;
 
-use std::comm;
 use std::hashmap::HashMap;
 use std::str::{eq, eq_slice};
 use std::ascii::StrAsciiExt;
@@ -125,7 +124,7 @@ pub enum ElementTypeId {
 //
 
 
-impl<'self> Element {
+impl Element {
     pub fn new_inherited(type_id: ElementTypeId, tag_name: ~str, namespace: Namespace, document: AbstractDocument) -> Element {
         Element {
             node: Node::new_inherited(ElementNodeTypeId(type_id), document),
@@ -154,9 +153,9 @@ impl<'self> Element {
         // FIXME: only case-insensitive in the HTML namespace (as opposed to SVG, etc.)
         let name = name.to_ascii_lower();
         self.attrs.find_equiv(&name).and_then(|attrs| {
-            do attrs.iter().find |attr| {
+            attrs.iter().find(|attr| {
                 eq_slice(attr.local_name, name) && attr.namespace == namespace
-            }.map(|x| *x)
+            }).map(|x| *x)
         })
     }
 
@@ -179,7 +178,7 @@ impl<'self> Element {
         //FIXME: Throw for XMLNS-invalid names
         let name = raw_name.to_ascii_lower();
         let (prefix, local_name) = if name.contains(":")  {
-            let parts: ~[&str] = name.splitn_iter(':', 1).collect();
+            let parts: ~[&str] = name.splitn(':', 1).collect();
             (Some(parts[0].to_owned()), parts[1].to_owned())
         } else {
             (None, name.clone())
@@ -257,14 +256,14 @@ impl<'self> Element {
         //       This hardcoding is awful.
         match abstract_self.type_id() {
             ElementNodeTypeId(HTMLImageElementTypeId) => {
-                do abstract_self.with_mut_image_element |image| {
+                abstract_self.with_mut_image_element(|image| {
                     image.AfterSetAttr(local_name.clone(), value.clone());
-                }
+                });
             }
             ElementNodeTypeId(HTMLIframeElementTypeId) => {
-                do abstract_self.with_mut_iframe_element |iframe| {
+                abstract_self.with_mut_iframe_element(|iframe| {
                     iframe.AfterSetAttr(local_name.clone(), value.clone());
-                }
+                });
             }
             _ => ()
         }
@@ -408,18 +407,18 @@ impl Element {
         let win = self.node.owner_doc().document().window;
         let node = abstract_self;
         assert!(node.is_element());
-        let (port, chan) = comm::stream();
+        let (port, chan) = Chan::new();
         let rects =
             match win.page.query_layout(ContentBoxesQuery(node, chan), port) {
                 ContentBoxesResponse(rects) => {
-                    do rects.map |r| {
+                    rects.map(|r| {
                         ClientRect::new(
                             win,
                             r.origin.y,
                             r.origin.y + r.size.height,
                             r.origin.x,
                             r.origin.x + r.size.width)
-                    }
+                    })
                 },
             };
 
@@ -430,7 +429,7 @@ impl Element {
         let win = self.node.owner_doc().document().window;
         let node = abstract_self;
         assert!(node.is_element());
-        let (port, chan) = comm::stream();
+        let (port, chan) = Chan::new();
         match win.page.query_layout(ContentBoxQuery(node, chan), port) {
             ContentBoxResponse(rect) => {
                 ClientRect::new(

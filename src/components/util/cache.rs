@@ -7,7 +7,7 @@ use std::hashmap::HashMap;
 pub trait Cache<K: Eq, V: Clone> {
     fn insert(&mut self, key: K, value: V);
     fn find(&mut self, key: &K) -> Option<V>;
-    fn find_or_create(&mut self, key: &K, blk: &fn(&K) -> V) -> V;
+    fn find_or_create(&mut self, key: &K, blk: |&K| -> V) -> V;
     fn evict_all(&mut self);
 }
 
@@ -33,7 +33,7 @@ impl<K: Clone + Eq, V: Clone> Cache<K,V> for MonoCache<K,V> {
         }
     }
 
-    fn find_or_create(&mut self, key: &K, blk: &fn(&K) -> V) -> V {
+    fn find_or_create(&mut self, key: &K, blk: |&K| -> V) -> V {
         match self.find(key) {
             Some(value) => value,
             None => {
@@ -87,7 +87,7 @@ impl<K: Clone + Eq + Hash, V: Clone> Cache<K,V> for HashCache<K,V> {
         }
     }
 
-    fn find_or_create(&mut self, key: &K, blk: &fn(&K) -> V) -> V {
+    fn find_or_create(&mut self, key: &K, blk: |&K| -> V) -> V {
         self.entries.find_or_insert_with(key.clone(), blk).clone()
     }
 
@@ -149,7 +149,7 @@ impl<K: Clone + Eq, V: Clone> Cache<K,V> for LRUCache<K,V> {
         }
     }
 
-    fn find_or_create(&mut self, key: &K, blk: &fn(&K) -> V) -> V {
+    fn find_or_create(&mut self, key: &K, blk: |&K| -> V) -> V {
         match self.entries.iter().position(|&(ref k, _)| *k == *key) {
             Some(pos) => self.touch(pos),
             None => {

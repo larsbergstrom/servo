@@ -47,6 +47,14 @@ pub enum Msg {
     /// this, or layout will crash.
     ExitNowMsg,
 }
+pub enum Msg2 {
+    AddStylesheetMsg2(Stylesheet),
+    ReflowMsg2(~Reflow),
+    QueryMsg2(LayoutQuery),
+    ReapLayoutDataMsg2(LayoutDataRef),
+    PrepareToExitMsg2(Chan<()>),
+    ExitNowMsg2,
+}
 
 /// Synchronous messages that script can send to layout.
 pub enum LayoutQuery {
@@ -119,12 +127,18 @@ pub struct Reflow {
     id: uint
 }
 
+#[deriving(Clone)]
+pub struct LayoutChan2(SharedChan<Msg2>);
+
+
 /// Encapsulates a channel to the layout task.
 #[deriving(Clone)]
 pub struct LayoutChan(SharedChan<Msg>);
+
 impl LayoutChan {
-    pub fn new(chan: Chan<Msg>) -> LayoutChan {
-        LayoutChan(SharedChan::new(chan))
+    pub fn new() -> (Port<Msg>, LayoutChan) {
+        let (port, chan) = SharedChan::new();
+        (port, LayoutChan(chan))
     }
 }
 

@@ -35,13 +35,13 @@ impl<T> Drop for Slot<T> {
     }
 }
 
-pub struct SlotRef<'self,T> {
-    ptr: &'self T,
+pub struct SlotRef<'a,T> {
+    ptr: &'a T,
     priv immutable_borrow_count: *mut u8,
 }
 
 #[unsafe_destructor]
-impl<'self,T> Drop for SlotRef<'self,T> {
+impl<'a,T> Drop for SlotRef<'a,T> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
@@ -50,13 +50,13 @@ impl<'self,T> Drop for SlotRef<'self,T> {
     }
 }
 
-pub struct MutSlotRef<'self,T> {
-    ptr: &'self mut T,
+pub struct MutSlotRef<'a,T> {
+    ptr: &'a mut T,
     priv mutably_borrowed: *mut bool,
 }
 
 #[unsafe_destructor]
-impl<'self,T> Drop for MutSlotRef<'self,T> {
+impl<'a,T> Drop for MutSlotRef<'a,T> {
     #[inline]
     fn drop(&mut self) {
         unsafe {

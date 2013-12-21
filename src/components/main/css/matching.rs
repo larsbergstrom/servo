@@ -11,11 +11,8 @@ use layout::wrapper::LayoutNode;
 
 use extra::arc::{Arc, RWArc};
 use std::cast;
-use std::cell::Cell;
-use std::comm;
 use std::libc::uintptr_t;
 use std::rt;
-use std::task;
 use std::vec;
 use style::{TNode, Stylist, cascade};
 
@@ -27,15 +24,15 @@ pub trait MatchMethods {
     fn cascade_subtree(&self, parent: Option<LayoutNode>);
 }
 
-impl<'self> MatchMethods for LayoutNode<'self> {
+impl<'ln> MatchMethods for LayoutNode<'ln> {
     fn match_node(&self, stylist: &Stylist) {
-        let applicable_declarations = do self.with_element |element| {
+        let applicable_declarations = self.with_element(|element| {
             let style_attribute = match *element.style_attribute() {
                 None => None,
                 Some(ref style_attribute) => Some(style_attribute)
             };
             stylist.get_applicable_declarations(self, style_attribute, None)
-        };
+        });
 
         match *self.mutate_layout_data().ptr {
             Some(ref mut layout_data) => {
@@ -56,8 +53,7 @@ impl<'self> MatchMethods for LayoutNode<'self> {
             }
         }
 
-        let (port, chan) = comm::stream();
-        let chan = comm::SharedChan::new(chan);
+        let (port, chan) = SharedChan::new();
         let mut num_spawned = 0;
 
         for nodes in nodes_per_task.move_iter() {
@@ -73,19 +69,20 @@ impl<'self> MatchMethods for LayoutNode<'self> {
                     cast::transmute(nodes)
                 };
 
-                do task::spawn_with((evil, stylist)) |(evil, stylist)| {
-                    let nodes: ~[LayoutNode] = unsafe {
-                        cast::transmute(evil)
-                    };
+                let evil = Some(evil);
+                spawn(proc() {
+                    let mut evil = evil;
+                    stylist.read(|stylist| {
+                        let nodes: ~[LayoutNode] = unsafe {
+                            cast::transmute(evil.take_unwrap())
+                        };
 
-                    let nodes = Cell::new(nodes);
-                    do stylist.read |stylist| {
-                        for node in nodes.take().move_iter() {
+                        for node in nodes.move_iter() {
                             node.match_node(stylist);
                         }
-                    }
+                    });
                     chan.send(());
-                }
+                });
                 num_spawned += 1;
             }
         }

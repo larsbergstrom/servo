@@ -602,7 +602,7 @@ impl<T: Tile> QuadtreeNode<T> {
         let w_br_quad = self.get_quadrant(w_x + w_width, w_y + w_height);
         
         // Figure out which quadrants the window is in
-        let builder = |push: &fn(Quadrant)| {
+        let builder = |push: |Quadrant|| {
             match (w_tl_quad, w_br_quad) {
                 (tl, br) if tl as int == br as int =>  {
                     push(tl);

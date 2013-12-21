@@ -52,9 +52,9 @@ impl NullCompositor {
                 // we'll notice and think about whether it needs a response, like
                 // SetIds.
 
-                NewLayer(*) | SetLayerPageSize(*) | SetLayerClipRect(*) | DeleteLayer(*) |
-                Paint(*) | InvalidateRect(*) | ChangeReadyState(*) | ChangeRenderState(*)|
-                ScrollFragmentPoint(*) | SetUnRenderedColor(*)
+                NewLayer(..) | SetLayerPageSize(..) | SetLayerClipRect(..) | DeleteLayer(..) |
+                Paint(..) | InvalidateRect(..) | ChangeReadyState(..) | ChangeRenderState(..)|
+                ScrollFragmentPoint(..) | SetUnRenderedColor(..)
                     => ()
             }
         }

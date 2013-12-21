@@ -41,7 +41,7 @@ pub struct FontTable {
 }
 
 impl FontTableMethods for FontTable {
-    fn with_buffer(&self, _blk: &fn(*u8, uint)) {
+    fn with_buffer(&self, _blk: |*u8, uint|) {
         fail!()
     }
 }
@@ -274,7 +274,7 @@ impl FontHandleMethods for FontHandle {
     }
 }
 
-impl<'self> FontHandle {
+impl<'a> FontHandle {
     #[fixed_stack_segment]
     fn set_char_size(face: FT_Face, pt_size: float) -> Result<(), ()>{
         let char_width = float_to_fixed_ft(pt_size) as FT_F26Dot6;
@@ -341,7 +341,7 @@ impl<'self> FontHandle {
         }
     }
 
-    fn get_face_rec(&'self self) -> &'self FT_FaceRec {
+    fn get_face_rec(&'a self) -> &'a FT_FaceRec {
         unsafe {
             &(*self.face)
         }

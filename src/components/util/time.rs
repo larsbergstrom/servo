@@ -4,25 +4,19 @@
 
 //! Timing functions.
 
-use extra::sort::tim_sort;
 use extra::time::precise_time_ns;
 use extra::treemap::TreeMap;
-use std::comm::{Port, SendDeferred, SharedChan};
+use std::comm::{Port, SharedChan};
 use std::iter::AdditiveIterator;
-use std::rt::io::timer::Timer;
-use std::task::spawn_with;
+use std::io::timer::Timer;
 
 // front-end representation of the profiler used to communicate with the profiler
 #[deriving(Clone)]
 pub struct ProfilerChan(SharedChan<ProfilerMsg>);
 
 impl ProfilerChan {
-    pub fn new(chan: Chan<ProfilerMsg>) -> ProfilerChan {
-        ProfilerChan(SharedChan::new(chan))
-    }
-
-    pub fn send_deferred(&self, msg: ProfilerMsg) {
-        (**self).send_deferred(msg);
+    pub fn send(&self, msg: ProfilerMsg) {
+        (**self).send(msg);
     }
 }
 
@@ -100,11 +94,13 @@ pub struct Profiler {
 }
 
 impl Profiler {
-    pub fn create(port: Port<ProfilerMsg>, chan: ProfilerChan, period: Option<f64>) {
+    pub fn create(period: Option<f64>) -> ProfilerChan {
+        let (port, chan) = SharedChan::new();
         match period {
             Some(period) => {
                 let period = (period * 1000f64) as u64;
-                do spawn {
+                let chan = chan.clone();
+                spawn(proc() {
                     let mut timer = Timer::new().unwrap();
                     loop {
                         timer.sleep(period);
@@ -112,20 +108,22 @@ impl Profiler {
                             break;
                         }
                     }
-                }
+                });
                 // Spawn the profiler
-                do spawn_with(port) |port| {
+                spawn(proc() {
                     let mut profiler = Profiler::new(port);
                     profiler.start();
-                }
+                });
             }
             None => {
                 // no-op to handle profiler messages when the profiler is inactive
-                do spawn_with(port) |port| {
+                spawn(proc() {
                     while port.try_recv().is_some() {}
-                }
+                });
             }
         }
+
+        ProfilerChan(chan)
     }
 
     pub fn new(port: Port<ProfilerMsg>) -> Profiler {
@@ -151,7 +149,7 @@ impl Profiler {
             TimeMsg(category, t) => self.buckets.find_mut(&category).unwrap().push(t),
             PrintMsg => match self.last_msg {
                 // only print if more data has arrived since the last printout
-                Some(TimeMsg(*)) => self.print_buckets(),
+                Some(TimeMsg(..)) => self.print_buckets(),
                 _ => ()
             },
         };
@@ -165,7 +163,13 @@ impl Profiler {
         for (category, data) in self.buckets.iter() {
             // FIXME(XXX): TreeMap currently lacks mut_iter()
             let mut data = data.clone();
-            tim_sort(data);
+            data.sort_by(|a, b| {
+                if a < b {
+                    Less
+                } else {
+                    Greater
+                }
+            });
             let data_len = data.len();
             if data_len > 0 {
                 let (mean, median, &min, &max) =
@@ -184,17 +188,17 @@ impl Profiler {
 
 pub fn profile<T>(category: ProfilerCategory, 
                   profiler_chan: ProfilerChan,
-                  callback: &fn() -> T)
+                  callback: || -> T)
                   -> T {
     let start_time = precise_time_ns();
     let val = callback();
     let end_time = precise_time_ns();
     let ms = ((end_time - start_time) as f64 / 1000000f64);
-    profiler_chan.send_deferred(TimeMsg(category, ms));
+    profiler_chan.send(TimeMsg(category, ms));
     return val;
 }
 
-pub fn time<T>(msg: &str, callback: &fn() -> T) -> T{
+pub fn time<T>(msg: &str, callback: || -> T) -> T{
     let start_time = precise_time_ns();
     let val = callback();
     let end_time = precise_time_ns();

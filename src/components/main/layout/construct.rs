@@ -22,8 +22,8 @@
 
 use css::node_style::StyledNode;
 use layout::block::BlockFlow;
-use layout::box::{Box, GenericBox, IframeBox, IframeBoxInfo, ImageBox, ImageBoxInfo};
-use layout::box::{UnscannedTextBox, UnscannedTextBoxInfo};
+use layout::box_::{Box, GenericBox, IframeBox, IframeBoxInfo, ImageBox, ImageBoxInfo};
+use layout::box_::{UnscannedTextBox, UnscannedTextBoxInfo};
 use layout::context::LayoutContext;
 use layout::float_context::FloatType;
 use layout::flow::{Flow, FlowData, MutableFlowUtils};
@@ -169,11 +169,11 @@ impl<T> OptVector<T> for Option<~[T]> {
 }
 
 /// An object that knows how to create flows.
-pub struct FlowConstructor<'self> {
+pub struct FlowConstructor<'a> {
     /// The layout context.
     ///
     /// FIXME(pcwalton): Why does this contain `@`??? That destroys parallelism!!!
-    layout_context: &'self mut LayoutContext,
+    layout_context: &'a mut LayoutContext,
 
     /// The next flow ID to assign.
     ///
@@ -181,7 +181,7 @@ pub struct FlowConstructor<'self> {
     next_flow_id: Slot<int>,
 }
 
-impl<'self> FlowConstructor<'self> {
+impl<'fc> FlowConstructor<'fc> {
     /// Creates a new flow constructor.
     pub fn init<'a>(layout_context: &'a mut LayoutContext) -> FlowConstructor<'a> {
         FlowConstructor {
@@ -344,8 +344,8 @@ impl<'self> FlowConstructor<'self> {
     /// to happen.
     fn build_flow_for_block(&mut self, node: LayoutNode) -> ~Flow: {
         let base = FlowData::new(self.next_flow_id(), node);
-        let box = self.build_box_for_node(node);
-        let mut flow = ~BlockFlow::from_box(base, box) as ~Flow:;
+        let box_ = self.build_box_for_node(node);
+        let mut flow = ~BlockFlow::from_box(base, box_) as ~Flow:;
         self.build_children_of_block_flow(&mut flow, node);
         flow
     }
@@ -355,8 +355,8 @@ impl<'self> FlowConstructor<'self> {
     fn build_flow_for_floated_block(&mut self, node: LayoutNode, float_type: FloatType)
                                     -> ~Flow: {
         let base = FlowData::new(self.next_flow_id(), node);
-        let box = self.build_box_for_node(node);
-        let mut flow = ~BlockFlow::float_from_box(base, float_type, box) as ~Flow:;
+        let box_ = self.build_box_for_node(node);
+        let mut flow = ~BlockFlow::float_from_box(base, float_type, box_) as ~Flow:;
         self.build_children_of_block_flow(&mut flow, node);
         flow
     }
@@ -458,7 +458,7 @@ impl<'self> FlowConstructor<'self> {
     }
 }
 
-impl<'self> PostorderNodeMutTraversal for FlowConstructor<'self> {
+impl<'a> PostorderNodeMutTraversal for FlowConstructor<'a> {
     // `#[inline(always)]` because this is always called from the traversal function and for some
     // reason LLVM's inlining heuristics go awry here.
     #[inline(always)]
@@ -528,7 +528,7 @@ trait NodeUtils {
     fn swap_out_construction_result(self) -> ConstructionResult;
 }
 
-impl<'self> NodeUtils for LayoutNode<'self> {
+impl<'ln> NodeUtils for LayoutNode<'ln> {
     fn is_replaced_content(self) -> bool {
         match self.type_id() {
             TextNodeTypeId |
@@ -568,14 +568,14 @@ fn strip_ignorable_whitespace_from_start(opt_boxes: &mut Option<~[Box]>) {
             // FIXME(pcwalton): This is slow because vector shift is broken. :(
             let mut found_nonwhitespace = false;
             let mut result = ~[];
-            for box in boxes.move_iter() {
-                if !found_nonwhitespace && box.is_whitespace_only() {
+            for box_ in boxes.move_iter() {
+                if !found_nonwhitespace && box_.is_whitespace_only() {
                     debug!("stripping ignorable whitespace from start");
                     continue
                 }
 
                 found_nonwhitespace = true;
-                result.push(box)
+                result.push(box_)
             }
 
             *opt_boxes = Some(result)

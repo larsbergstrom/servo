@@ -36,14 +36,14 @@ impl AttrList {
         if index >= self.Length() {
             None
         } else {
-            do self.owner.with_imm_element |elem| {
+            self.owner.with_imm_element(|elem| {
                 let insert_order = &elem.attrs_insert_order[index];
-                do elem.attrs.find_equiv(&insert_order.first()).and_then |attrs| {
+                elem.attrs.find_equiv(&insert_order.first()).and_then(|attrs| {
                     attrs.iter()
                          .find(|attr| attr.namespace == insert_order.second())
                          .map(|attr| *attr)
-                }
-            }
+                })
+            })
         }
     }
 

@@ -18,18 +18,15 @@ use servo_msg::compositor_msg::ScriptListener;
 use servo_net::image_cache_task::ImageCacheTask;
 
 use js::glue::*;
-use js::jsapi::{JSObject, JSContext, JS_DefineProperty};
-use js::jsapi::{JSPropertyOp, JSStrictPropertyOp, JSTracer};
+use js::jsapi::{JSObject, JSContext, JS_DefineProperty, JSTracer};
 use js::{JSVAL_NULL, JSPROP_ENUMERATE};
 
-use std::cell::Cell;
-use std::comm;
+use std::cast;
 use std::comm::SharedChan;
 use std::hashmap::HashSet;
 use std::ptr;
-use std::int;
-use std::rt::io::timer::Timer;
-use std::task::spawn_with;
+use std::num;
+use std::io::timer::Timer;
 use js::jsapi::JSVal;
 
 pub enum TimerControlMsg {
@@ -160,23 +157,23 @@ impl Reflectable for Window {
 
 impl Window {
     pub fn SetTimeout(&mut self, _cx: *JSContext, callback: JSVal, timeout: i32) -> i32 {
-        let timeout = int::max(0, timeout) as u64;
+        let timeout = num::max(0, timeout) as u64;
         let handle = self.next_timer_handle;
         self.next_timer_handle += 1;
 
         // Post a delayed message to the per-window timer task; it will dispatch it
         // to the relevant script handler that will deal with it.
-        let tm = Cell::new(Timer::new().unwrap());
+        let tm = Timer::new().unwrap();
         let chan = self.timer_chan.clone();
-        do spawn {
-            let mut tm = tm.take();
+        spawn(proc() {
+            let mut tm = tm;
             tm.sleep(timeout);
             chan.send(TimerMessage_Fire(~TimerData {
                 handle: handle,
                 funval: callback,
                 args: ~[]
             }));
-        }
+        });
         self.active_timers.insert(handle);
         handle
     }
@@ -199,7 +196,6 @@ impl Window {
         self.page.join_layout();
     }
 
-    #[fixed_stack_segment]
     pub fn new(cx: *JSContext,
                page: @mut Page,
                script_chan: ScriptChan,
@@ -212,9 +208,9 @@ impl Window {
             script_chan: script_chan.clone(),
             compositor: compositor,
             timer_chan: {
-                let (timer_port, timer_chan) = comm::stream::<TimerControlMsg>();
+                let (timer_port, timer_chan): (Port<TimerControlMsg>, SharedChan<TimerControlMsg>) = SharedChan::new();
                 let id = page.id.clone();
-                do spawn_with(script_chan) |script_chan| {
+                spawn(proc() {
                     loop {
                         match timer_port.recv() {
                             TimerMessage_Close => break,
@@ -222,8 +218,8 @@ impl Window {
                             TimerMessage_TriggerExit => script_chan.send(ExitWindowMsg(id)),
                         }
                     }
-                }
-                SharedChan::new(timer_chan)
+                });
+                timer_chan
             },
             location: None,
             navigator: None,
@@ -236,13 +232,13 @@ impl Window {
         unsafe {
             let fn_names = ["window","self"];
             for str in fn_names.iter() {
-                do (*str).to_c_str().with_ref |name| {
+                (*str).to_c_str().with_ref(|name| {
                     JS_DefineProperty(cx, global,  name,
                                       RUST_OBJECT_TO_JSVAL(global),
-                                      Some(GetJSClassHookStubPointer(PROPERTY_STUB) as JSPropertyOp),
-                                      Some(GetJSClassHookStubPointer(STRICT_PROPERTY_STUB) as JSStrictPropertyOp),
+                                      Some(cast::transmute(GetJSClassHookStubPointer(PROPERTY_STUB))),
+                                      Some(cast::transmute(GetJSClassHookStubPointer(STRICT_PROPERTY_STUB))),
                                       JSPROP_ENUMERATE);
-                }
+                })
 
             }
 

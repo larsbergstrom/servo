@@ -23,7 +23,6 @@ impl Reflectable for AbstractNode {
 
 impl Traceable for Node {
     fn trace(&self, tracer: *mut JSTracer) {
-        #[fixed_stack_segment]
         fn trace_node(tracer: *mut JSTracer, node: Option<AbstractNode>, name: &str) {
             if node.is_none() {
                 return;
@@ -35,10 +34,10 @@ impl Traceable for Node {
             unsafe {
                 (*tracer).debugPrinter = ptr::null();
                 (*tracer).debugPrintIndex = -1;
-                do name.to_c_str().with_ref |name| {
+                name.to_c_str().with_ref(|name| {
                     (*tracer).debugPrintArg = name as *libc::c_void;
                     JS_CallTracer(cast::transmute(tracer), obj, JSTRACE_OBJECT as u32);
-                }
+                });
             }
         }
         debug!("tracing {:p}?:", self.reflector().get_jsobject());
