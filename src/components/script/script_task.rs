@@ -252,7 +252,7 @@ impl Page {
             let join_port = replace(&mut self.layout_join_port, None);
             match join_port {
                 Some(ref join_port) => {
-                    match join_port.try_recv() {
+                    match join_port.recv_opt() {
                         None => {
                             info!("script: waiting on layout");
                             join_port.recv();

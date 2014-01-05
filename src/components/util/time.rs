@@ -8,7 +8,24 @@ use extra::time::precise_time_ns;
 use extra::treemap::TreeMap;
 use std::comm::{Port, SharedChan};
 use std::iter::AdditiveIterator;
-use std::io::timer::Timer;
+
+
+// TODO: This code should be changed to use the commented code that uses timers
+// directly, once native timers land in Rust.
+extern {
+    pub fn usleep(secs: u64) -> u32;
+}
+
+pub struct Timer;
+impl Timer {
+    pub fn sleep(ms: u64) {
+        //
+        //  let mut timer = Timer::new().unwrap();
+        //  timer.sleep(period);
+       unsafe { usleep((ms * 1000)); }
+    }
+}
+
 
 // front-end representation of the profiler used to communicate with the profiler
 #[deriving(Clone)]
@@ -101,9 +118,8 @@ impl Profiler {
                 let period = (period * 1000f64) as u64;
                 let chan = chan.clone();
                 spawn(proc() {
-                    let mut timer = Timer::new().unwrap();
                     loop {
-                        timer.sleep(period);
+                        Timer::sleep(period);
                         if !chan.try_send(PrintMsg) {
                             break;
                         }
@@ -118,7 +134,7 @@ impl Profiler {
             None => {
                 // no-op to handle profiler messages when the profiler is inactive
                 spawn(proc() {
-                    while port.try_recv().is_some() {}
+                    while port.recv_opt().is_some() {}
                 });
             }
         }
@@ -136,7 +152,7 @@ impl Profiler {
 
     pub fn start(&mut self) {
         loop {
-            let msg = self.port.try_recv();
+            let msg = self.port.recv_opt();
             match msg {
                Some (msg) => self.handle_msg(msg),
                None => break

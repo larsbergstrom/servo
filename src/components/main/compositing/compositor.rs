@@ -34,12 +34,11 @@ use png;
 use servo_msg::compositor_msg::{Epoch, IdleRenderState, LayerBufferSet, RenderState};
 use servo_msg::constellation_msg::{ConstellationChan, NavigateMsg, ResizedWindowMsg, LoadUrlMsg, PipelineId};
 use servo_msg::constellation_msg;
-use servo_util::time::{profile, ProfilerChan};
+use servo_util::time::{profile, ProfilerChan, Timer};
 use servo_util::{time, url};
 use std::comm::Port;
 use std::num::Orderable;
 use std::path::Path;
-use std::io::timer::Timer;
 
 
 pub struct IOCompositor {
@@ -152,7 +151,6 @@ impl IOCompositor {
         self.constellation_chan.send(ResizedWindowMsg(self.window_size));
 
         // Enter the main event loop.
-        let mut tm = Timer::new().unwrap();
         while !self.done {
             // Check for new messages coming from the rendering task.
             self.handle_message();
@@ -166,7 +164,7 @@ impl IOCompositor {
                 self.composite();
             }
 
-            tm.sleep(10);
+            Timer::sleep(10);
 
             // If a pinch-zoom happened recently, ask for tiles at the new resolution
             if self.zoom_action && precise_time_s() - self.zoom_time > 0.3 {

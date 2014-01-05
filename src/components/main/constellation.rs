@@ -799,7 +799,7 @@ impl Constellation {
     fn set_ids(&self, frame_tree: @mut FrameTree) {
         let (port, chan) = Chan::new();
         self.compositor_chan.send(SetIds(frame_tree.to_sendable(), chan, self.chan.clone()));
-        match port.try_recv() {
+        match port.recv_opt() {
             Some(()) => {
                 for frame in frame_tree.iter() {
                     frame.pipeline.grant_paint_permission();

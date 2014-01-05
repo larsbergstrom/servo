@@ -191,8 +191,8 @@ impl Pipeline {
 
         // Wait until all slave tasks have terminated and run destructors
         // NOTE: We don't wait for script task as we don't always own it
-        self.render_shutdown_port.try_recv();
-        self.layout_shutdown_port.try_recv();
+        self.render_shutdown_port.recv_opt();
+        self.layout_shutdown_port.recv_opt();
     }
 
     pub fn to_sendable(&self) -> CompositionPipeline {
