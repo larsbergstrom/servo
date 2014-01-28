@@ -6,6 +6,7 @@ use extra::arc::Arc;
 use std::ascii::StrAsciiExt;
 use std::hashmap::HashMap;
 use std::str;
+use std::to_bytes;
 
 use servo_util::namespace;
 
@@ -23,6 +24,36 @@ pub enum StylesheetOrigin {
 
 /// The definition of whitespace per CSS Selectors Level 3 § 4.
 static SELECTOR_WHITESPACE: &'static [char] = &'static [' ', '\t', '\n', '\r', '\x0C'];
+
+/// A newtype struct used to perform lowercase ASCII comparisons without allocating a whole new
+/// string.
+struct LowercaseAsciiString<'a>(&'a str);
+
+impl<'a> Equiv<~str> for LowercaseAsciiString<'a> {
+    fn equiv(&self, other: &~str) -> bool {
+        let LowercaseAsciiString(this) = *self;
+        this.eq_ignore_ascii_case(*other)
+    }
+}
+
+impl<'a> IterBytes for LowercaseAsciiString<'a> {
+    #[inline]
+    fn iter_bytes(&self, _: bool, f: to_bytes::Cb) -> bool {
+        for b in self.bytes() {
+            // FIXME(pcwalton): This is a nasty hack for performance. We temporarily violate the
+            // `Ascii` type's invariants by using `to_ascii_nocheck`, but it's OK as we simply
+            // convert to a byte afterward.
+            unsafe {
+                if !f([ b.to_ascii_nocheck().to_lower().to_byte() ]) {
+                    return false
+                }
+            }
+        }
+        // Terminate the string with a non-UTF-8 character, to match what the built-in string
+        // `ToBytes` implementation does. (See `libstd/to_bytes.rs`.)
+        f([ 0xff ])
+    }
+}
 
 /// Map node attributes to Rules whose last simple selector starts with them.
 ///
@@ -51,6 +82,8 @@ struct SelectorMap {
     element_hash: HashMap<~str, ~[Rule]>,
     // For Rules that don't have ID, class, or element selectors.
     universal_rules: ~[Rule],
+    /// Whether this hash is empty.
+    empty: bool,
 }
 
 impl SelectorMap {
@@ -60,6 +93,7 @@ impl SelectorMap {
             class_hash: HashMap::new(),
             element_hash: HashMap::new(),
             universal_rules: ~[],
+            empty: true,
         }
     }
 
@@ -72,6 +106,10 @@ impl SelectorMap {
                               &self,
                               node: &N,
                               matching_rules_list: &mut ~[Rule]) {
+        if self.empty {
+            return
+        }
+
         // At the end, we're going to sort the rules that we added, so remember where we began.
         let init_len = matching_rules_list.len();
         node.with_element(|element: &E| {
@@ -88,8 +126,10 @@ impl SelectorMap {
             match element.get_attr(&namespace::Null, "class") {
                 Some(ref class_attr) => {
                     for class in class_attr.split(SELECTOR_WHITESPACE) {
-                        SelectorMap::get_matching_rules_from_hash(
-                            node, &self.class_hash, class, matching_rules_list);
+                        SelectorMap::get_matching_rules_from_hash(node,
+                                                                  &self.class_hash,
+                                                                  class,
+                                                                  matching_rules_list);
                     }
                 }
                 None => {}
@@ -97,10 +137,10 @@ impl SelectorMap {
 
             // HTML elements in HTML documents must be matched case-insensitively.
             // TODO(pradeep): Case-sensitivity depends on the document type.
-            SelectorMap::get_matching_rules_from_hash(node,
-                                                      &self.element_hash,
-                                                      element.get_local_name().to_ascii_lower(),
-                                                      matching_rules_list);
+            SelectorMap::get_matching_rules_from_hash_ignoring_case(node,
+                                                                    &self.element_hash,
+                                                                    element.get_local_name(),
+                                                                    matching_rules_list);
             SelectorMap::get_matching_rules(node,
                                             self.universal_rules,
                                             matching_rules_list);
@@ -130,6 +170,20 @@ impl SelectorMap {
         }
     }
 
+    fn get_matching_rules_from_hash_ignoring_case<E:TElement,
+                                                  N:TNode<E>>(
+                                                  node: &N,
+                                                  hash: &HashMap<~str,~[Rule]>,
+                                                  key: &str,
+                                                  matching_rules: &mut ~[Rule]) {
+        match hash.find_equiv(&LowercaseAsciiString(key)) {
+            Some(rules) => {
+                SelectorMap::get_matching_rules(node, *rules, matching_rules)
+            }
+            None => {}
+        }
+    }
+
     /// Adds rules in `rules` that match `node` to the `matching_rules` list.
     fn get_matching_rules<E:TElement,
                           N:TNode<E>>(
@@ -147,6 +201,8 @@ impl SelectorMap {
     /// Insert rule into the correct hash.
     /// Order in which to try: id_hash, class_hash, element_hash, universal_rules.
     fn insert(&mut self, rule: Rule) {
+        self.empty = false;
+
         match SelectorMap::get_id_name(&rule) {
             Some(id_name) => {
                 match self.id_hash.find_mut(&id_name) {
