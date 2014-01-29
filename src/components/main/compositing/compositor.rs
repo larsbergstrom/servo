@@ -654,6 +654,7 @@ impl IOCompositor {
         if write_png {
             let (width, height) = (self.window_size.width as uint, self.window_size.height as uint);
             let path = from_str::<Path>(*self.opts.output_file.get_ref()).unwrap();
+            gl2::finish();
             let mut pixels = gl2::read_pixels(0, 0,
                                               width as gl2::GLsizei,
                                               height as gl2::GLsizei,

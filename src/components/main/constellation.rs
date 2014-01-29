@@ -37,7 +37,7 @@ pub struct Constellation {
     pending_frames: ~[FrameChange],
     pending_sizes: HashMap<(PipelineId, SubpageId), Rect<f32>>,
     profiler_chan: ProfilerChan,
-    window_size: Size2D<uint>,
+    window_size: Option<Size2D<uint>>,
     opts: Opts,
 }
 
@@ -273,7 +273,7 @@ impl Constellation {
                 pending_frames: ~[],
                 pending_sizes: HashMap::new(),
                 profiler_chan: profiler_chan,
-                window_size: Size2D(500u, 500u),
+                window_size: None,
                 opts: opts_clone,
             };
             constellation.run();
@@ -760,7 +760,7 @@ impl Constellation {
             }
         }
 
-        self.window_size = new_size;
+        self.window_size = Some(new_size);
     }
 
     // Close all pipelines at and beneath a given frame

@@ -115,7 +115,7 @@ pub struct Page {
     damage: Option<DocumentDamage>,
 
     /// The current size of the window, in pixels.
-    window_size: Size2D<uint>,
+    window_size: Option<Size2D<uint>>,
 
     js_info: Option<JSPageInfo>,
 
@@ -144,7 +144,7 @@ pub struct PageTreeIterator<'a> {
 }
 
 impl PageTree {
-    fn new(id: PipelineId, layout_chan: LayoutChan, window_size: Size2D<uint>) -> PageTree {
+    fn new(id: PipelineId, layout_chan: LayoutChan, window_size: Option<Size2D<uint>>) -> PageTree {
         PageTree {
             page: @mut Page {
                 id: id,
@@ -289,6 +289,11 @@ impl Page {
                   goal: ReflowGoal,
                   script_chan: ScriptChan,
                   compositor: @ScriptListener) {
+        if (self.window_size.is_none()) {
+            debug!("script: skipping reflow due to unset window size");
+            return
+        }
+        
         let root = match self.frame {
             None => return,
             Some(ref frame) => {
@@ -299,7 +304,7 @@ impl Page {
         match root {
             None => {},
             Some(root) => {
-                debug!("script: performing reflow for goal {:?}", goal);
+                debug!("script: performing reflow for goal {:?} with window size {:?}", goal, self.window_size);
 
                 // Now, join the layout so that they will see the latest changes we have made.
                 self.join_layout();
@@ -318,7 +323,7 @@ impl Page {
                     document_root: root,
                     url: self.url.get_ref().first().clone(),
                     goal: goal,
-                    window_size: self.window_size,
+                    window_size: self.window_size.expect("Window size should be set for a reflow event"),
                     script_chan: script_chan,
                     script_join_chan: join_chan,
                     damage: replace(&mut self.damage, None).unwrap(),
@@ -424,7 +429,7 @@ impl ScriptTask {
                constellation_chan: ConstellationChan,
                resource_task: ResourceTask,
                img_cache_task: ImageCacheTask,
-               window_size: Size2D<uint>)
+               window_size: Option<Size2D<uint>>)
                -> @mut ScriptTask {
         let js_runtime = js::rust::rt();
 
@@ -462,7 +467,7 @@ impl ScriptTask {
                   constellation_chan: ConstellationChan,
                   resource_task: ResourceTask,
                   image_cache_task: ImageCacheTask,
-                  window_size: Size2D<uint>) {
+                  window_size: Option<Size2D<uint>>) {
         spawn_named("ScriptTask", proc() {
             let script_task = ScriptTask::new(id,
                                               @compositor as @ScriptListener,
@@ -604,7 +609,7 @@ impl ScriptTask {
     fn handle_resize_inactive_msg(&mut self, id: PipelineId, new_size: Size2D<uint>) {
         let page = self.page_tree.find(id).expect("Received resize message for PipelineId not associated
             with a page in the page tree. This is a bug.").page;
-        page.window_size = new_size;
+        page.window_size = Some(new_size);
         let last_loaded_url = replace(&mut page.url, None);
         for url in last_loaded_url.iter() {
             page.url = Some((url.first(), true));
@@ -819,15 +824,23 @@ impl ScriptTask {
             ResizeEvent(new_width, new_height) => {
                 debug!("script got resize event: {:u}, {:u}", new_width, new_height);
 
-                page.window_size = Size2D(new_width, new_height);
+                let new_size = Size2D(new_width, new_height);
 
-                if page.frame.is_some() {
-                    page.damage(ReflowDocumentDamage);
-                    page.reflow(ReflowForDisplay, self.chan.clone(), self.compositor)
-                }
-                match page.fragment_node.take() {
-                    Some(node) => self.scroll_fragment_point(pipeline_id, page, node),
-                    None => {}
+                if (page.window_size.is_some() &&
+                    page.window_size.expect("") == new_size) {
+                    debug!("script ignoring resize event with unchanged dimensions");
+
+                } else {
+                    page.window_size = Some(new_size);
+
+                    if page.frame.is_some() {
+                        page.damage(ReflowDocumentDamage);
+                        page.reflow(ReflowForDisplay, self.chan.clone(), self.compositor)
+                    }
+                    match page.fragment_node.take() {
+                        Some(node) => self.scroll_fragment_point(pipeline_id, page, node),
+                        None => {}
+                    }
                 }
             }
 

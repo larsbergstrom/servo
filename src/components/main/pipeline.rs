@@ -101,7 +101,7 @@ impl Pipeline {
                   image_cache_task: ImageCacheTask,
                   resource_task: ResourceTask,
                   profiler_chan: ProfilerChan,
-                  window_size: Size2D<uint>,
+                  window_size: Option<Size2D<uint>>,
                   opts: Opts)
                   -> Pipeline {
         let (script_port, script_chan) = ScriptChan::new();
