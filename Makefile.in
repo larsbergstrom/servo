@@ -38,15 +38,10 @@ else
   CFG_RUSTC_FLAGS += -O -Z no-debug-borrows
 endif
 
+CFG_RUSTC_FLAGS += -g
 ifdef CFG_ENABLE_DEBUG
-  $(info cfg: enabling more debugging (CFG_ENABLE_DEBUG))
-  CFG_RUSTC_FLAGS += -Z extra-debug-info
-  CFG_RUSTC_SELF_FLAGS += -Z extra-debug-info
-else
-  # Enable debug!() etc even without configure --enable-debug
-  # The evaluation of these prints & their arguments is controlled
-  # at runtime by the environment variable RUST_LOG.
-  CFG_RUSTC_FLAGS += -Z debug-info
+  $(info cfg: enabling more debugging in RUSTC (CFG_ENABLE_DEBUG))
+  CFG_RUSTC_SELF_FLAGS += -g
 endif
 
 export CFG_RUSTC
