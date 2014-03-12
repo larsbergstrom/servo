@@ -10,10 +10,12 @@
 
 #[feature(globs, macro_rules, struct_variant, managed_boxes)];
 
+extern crate collections;
 extern crate geom;
 extern crate hubbub;
 extern crate encoding;
 extern crate js;
+extern crate serialize;
 extern crate servo_net = "net";
 extern crate servo_util = "util";
 extern crate style;
