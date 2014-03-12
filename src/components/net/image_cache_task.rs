@@ -426,7 +426,7 @@ impl ImageCache {
 }
 
 
-trait ImageCacheTaskClient {
+pub trait ImageCacheTaskClient {
     fn exit(&self);
 }
 
