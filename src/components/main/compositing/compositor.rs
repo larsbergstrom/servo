@@ -167,8 +167,10 @@ impl IOCompositor {
 
     fn run (&mut self) {
         // Tell the constellation about the initial window size.
-        let ConstellationChan(ref chan) = self.constellation_chan;
-        chan.send(ResizedWindowMsg(self.window_size));
+        {
+            let ConstellationChan(ref chan) = self.constellation_chan;
+            chan.send(ResizedWindowMsg(self.window_size));
+        }
 
         // Enter the main event loop.
         while !self.done {
@@ -356,8 +358,10 @@ impl IOCompositor {
         let window_size = self.window.borrow().size();
         let window_size = Size2D(window_size.width as uint,
                                  window_size.height as uint);
-        let ConstellationChan(ref chan) = new_constellation_chan;
-        chan.send(ResizedWindowMsg(window_size));
+        {
+            let ConstellationChan(ref chan) = new_constellation_chan;
+            chan.send(ResizedWindowMsg(window_size));
+        }
 
         self.constellation_chan = new_constellation_chan;
     }

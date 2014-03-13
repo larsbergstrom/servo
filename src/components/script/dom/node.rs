@@ -1667,15 +1667,17 @@ impl Node {
                 lastother = ancestor;
             }
             if lastself != lastother {
-                let abstract_uint: uintptr_t = cast::transmute(abstract_self.get());
-                let other_uint: uintptr_t = cast::transmute(other.get());
-                
-                let random = if (abstract_uint < other_uint) {
-                    DOCUMENT_POSITION_FOLLOWING
-                } else {
-                    DOCUMENT_POSITION_PRECEDING
-                };
-                return random + DOCUMENT_POSITION_DISCONNECTED + DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
+                unsafe {
+                    let abstract_uint: uintptr_t = cast::transmute(abstract_self.get());
+                    let other_uint: uintptr_t = cast::transmute(other.get());
+                    
+                    let random = if (abstract_uint < other_uint) {
+                        DOCUMENT_POSITION_FOLLOWING
+                    } else {
+                        DOCUMENT_POSITION_PRECEDING
+                    };
+                    return random + DOCUMENT_POSITION_DISCONNECTED + DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
+                }
             }
             for child in lastself.traverse_preorder() {
                 if &child == other {

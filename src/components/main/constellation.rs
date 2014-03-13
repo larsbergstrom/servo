@@ -438,10 +438,10 @@ impl Constellation {
             Some(id) => id.clone()
         };
 
-        let ScriptChan(old_script) = old_pipeline.borrow().script_chan;
+        let ScriptChan(ref old_script) = old_pipeline.borrow().script_chan;
         old_script.try_send(ExitPipelineMsg(pipeline_id));
         old_pipeline.borrow().render_chan.chan.try_send(render_task::ExitMsg(None));
-        let LayoutChan(old_layout) = old_pipeline.borrow().layout_chan;
+        let LayoutChan(ref old_layout) = old_pipeline.borrow().layout_chan;
         old_layout.try_send(layout_interface::ExitNowMsg);
         self.pipelines.remove(&pipeline_id);
 
@@ -511,53 +511,57 @@ impl Constellation {
                 == subpage_id
         };
 
-        // Update a child's frame rect and inform its script task of the change,
-        // if it hasn't been already. Optionally inform the compositor if 
-        // resize happens immediately.
-        let update_child_rect = |child_frame_tree: &mut ChildFrameTree, is_active: bool| {
-            child_frame_tree.rect = Some(rect.clone());
-            // NOTE: work around borrowchk issues
-            let pipeline = &child_frame_tree.frame_tree.borrow().pipeline.borrow();
-            if !already_sent.contains(&pipeline.get().borrow().id) {
-                let Size2D { width, height } = rect.size;
-                if is_active {
-                    let pipeline = pipeline.get().borrow();
-                    let ScriptChan(ref chan) = pipeline.script_chan;
-                    chan.send(ResizeMsg(pipeline.id, Size2D {
-                        width:  width  as uint,
-                        height: height as uint
-                    }));
-                    self.compositor_chan.send(SetLayerClipRect(pipeline.id, rect));
-                } else {
-                    let pipeline = pipeline.get().borrow();
-                    let ScriptChan(ref chan) = pipeline.script_chan;
-                    chan.send(ResizeInactiveMsg(pipeline.id,
-                                                Size2D(width as uint, height as uint)));
-                }
-                let pipeline = pipeline.get().borrow();
-                already_sent.insert(pipeline.id);
-            }
-        };
-
-        // If the subframe is in the current frame tree, the compositor needs the new size
-        for current_frame in self.current_frame().iter() {
-            debug!("Constellation: Sending size for frame in current frame tree.");
-            let source_frame = current_frame.borrow().find(pipeline_id);
-            for source_frame in source_frame.iter() {
+        {
+            // Update a child's frame rect and inform its script task of the change,
+            // if it hasn't been already. Optionally inform the compositor if 
+            // resize happens immediately.
+            let compositor_chan = self.compositor_chan.clone();
+            let update_child_rect = |child_frame_tree: &mut ChildFrameTree, is_active: bool| {
+                child_frame_tree.rect = Some(rect.clone());
                 // NOTE: work around borrowchk issues
-                let mut tmp = source_frame.borrow().children.borrow_mut();
-                let found_child = tmp.get().mut_iter().find(|child| subpage_eq(child));
-                found_child.map(|child| update_child_rect(child, true));
+                let pipeline = &child_frame_tree.frame_tree.borrow().pipeline.borrow();
+                if !already_sent.contains(&pipeline.get().borrow().id) {
+                    let Size2D { width, height } = rect.size;
+                    if is_active {
+                        let pipeline = pipeline.get().borrow();
+                        let ScriptChan(ref chan) = pipeline.script_chan;
+                        chan.send(ResizeMsg(pipeline.id, Size2D {
+                            width:  width  as uint,
+                            height: height as uint
+                        }));
+                        compositor_chan.send(SetLayerClipRect(pipeline.id, rect));
+                    } else {
+                        let pipeline = pipeline.get().borrow();
+                        let ScriptChan(ref chan) = pipeline.script_chan;
+                        chan.send(ResizeInactiveMsg(pipeline.id,
+                                                    Size2D(width as uint, height as uint)));
+                    }
+                    let pipeline = pipeline.get().borrow();
+                    already_sent.insert(pipeline.id);
+                }
+            };
+            
+            
+            // If the subframe is in the current frame tree, the compositor needs the new size
+            for current_frame in self.current_frame().iter() {
+                debug!("Constellation: Sending size for frame in current frame tree.");
+                let source_frame = current_frame.borrow().find(pipeline_id);
+                for source_frame in source_frame.iter() {
+                    // NOTE: work around borrowchk issues
+                    let mut tmp = source_frame.borrow().children.borrow_mut();
+                    let found_child = tmp.get().mut_iter().find(|child| subpage_eq(child));
+                    found_child.map(|child| update_child_rect(child, true));
+                }
             }
-        }
 
-        // Update all frames with matching pipeline- and subpage-ids
-        let frames = self.find_all(pipeline_id);
-        for frame_tree in frames.iter() {
-            // NOTE: work around borrowchk issues
-            let mut tmp = frame_tree.borrow().children.borrow_mut();
-            let found_child = tmp.get().mut_iter().find(|child| subpage_eq(child));
-            found_child.map(|child| update_child_rect(child, false));
+            // Update all frames with matching pipeline- and subpage-ids
+            let frames = self.find_all(pipeline_id);
+            for frame_tree in frames.iter() {
+                // NOTE: work around borrowchk issues
+                let mut tmp = frame_tree.borrow().children.borrow_mut();
+                let found_child = tmp.get().mut_iter().find(|child| subpage_eq(child));
+                found_child.map(|child| update_child_rect(child, false));
+            }
         }
 
         // At this point, if no pipelines were sent a resize msg, then this subpage id

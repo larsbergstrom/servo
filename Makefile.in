@@ -130,8 +130,6 @@ endif
 # their name already, while others don't.
 DONE_$(1) = $$(B)src/$$(PATH_$(1))/lib*.dummy
 DEPS_SUBMODULES += $$(PATH_$(1))
-DEPS_SUBMODULES += $$(PATH_$(1))/.libs
-DEPS_SUBMODULES += $$(PATH_$(1))/src/.libs
 endef
 
 # these will get populated.
@@ -158,7 +156,7 @@ endef
 define DEF_SUBMODULE_RULES
 
 ENV_RLDFLAGS_$(1) = -L $$(CFG_BUILD_HOME)workspace/lib/$$(CFG_TARGET_TRIPLES)
-ENV_RLDFLAGS_$(1) += $$(foreach dep,$$(DEPS_$(1)),-L $$(B)src/$$(PATH_$$(dep)) -L $$(B)src/$$(PATH_$$(dep))/.libs -L $$(B)src/$$(PATH_$$(dep))/src/.libs)
+ENV_RLDFLAGS_$(1) += $$(foreach dep,$$(DEPS_$(1)),-L $$(B)src/$$(PATH_$$(dep)))
 
 # variables that depend on dependency definitions from sub.mk!
 ENV_CFLAGS_$(1) = CFLAGS="$$(CFLAGS_$(1))"

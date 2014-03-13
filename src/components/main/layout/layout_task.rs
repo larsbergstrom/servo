@@ -690,7 +690,7 @@ impl LayoutTask {
         // FIXME(pcwalton): This should probably be *one* channel, but we can't fix this without
         // either select or a filtered recv() that only looks for messages of a given type.
         data.script_join_chan.send(());
-        let ScriptChan(chan) = data.script_chan;
+        let ScriptChan(ref chan) = data.script_chan;
         chan.send(ReflowCompleteMsg(self.id, data.id));
     }
 

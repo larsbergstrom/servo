@@ -537,22 +537,22 @@ impl FlowFlags {
 
     #[inline]
     pub fn set_text_align(&mut self, value: text_align::T) {
-        let FlowFlags(ref ff) = *self;
-        *self = FlowFlags((*ff & !TEXT_ALIGN_BITMASK) | ((value as u8) << TEXT_ALIGN_SHIFT))
+        let FlowFlags(ff) = *self;
+        *self = FlowFlags((ff & !TEXT_ALIGN_BITMASK) | ((value as u8) << TEXT_ALIGN_SHIFT))
     }
 
     #[inline]
     pub fn set_text_align_override(&mut self, parent: FlowFlags) {
-        let FlowFlags(ref ff) = *self;
+        let FlowFlags(ff) = *self;
         let FlowFlags(pff) = parent;
-        *self = FlowFlags(*ff | (pff & TEXT_ALIGN_BITMASK))
+        *self = FlowFlags(ff | (pff & TEXT_ALIGN_BITMASK))
     }
 
     #[inline]
     pub fn set_text_decoration_override(&mut self, parent: FlowFlags) {
-        let FlowFlags(ref ff) = *self;
+        let FlowFlags(ff) = *self;
         let FlowFlags(pff) = parent;
-        *self = FlowFlags(*ff | (pff & TEXT_DECORATION_OVERRIDE_BITMASK));
+        *self = FlowFlags(ff | (pff & TEXT_DECORATION_OVERRIDE_BITMASK));
     }
 
     #[inline]

@@ -179,7 +179,7 @@ fn run(opts: opts::Opts) {
                 parse_url(*filename, None)
             };
 
-            let ConstellationChan(chan) = constellation_chan;
+            let ConstellationChan(ref chan) = constellation_chan;
             chan.send(InitLoadUrlMsg(url));
         }
 
