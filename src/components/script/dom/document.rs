@@ -64,8 +64,7 @@ pub struct Document {
     priv extra: Untraceable,
 }
 
-// FIXME(larsberg): rebase with ms2ger fix for bad uses of this to remove 'pub'
-pub struct Untraceable {
+struct Untraceable {
     url: Url,
     quirks_mode: QuirksMode,
 }
