@@ -135,11 +135,11 @@ pub struct LayoutNode<'a> {
     priv chain: &'a (),
 }
 
-impl<'a> Clone for LayoutNode<'a> {
-    fn clone(&self) -> LayoutNode {
+impl<'ln> Clone for LayoutNode<'ln> {
+    fn clone(&self) -> LayoutNode<'ln> {
         LayoutNode {
-            node: self.node.transmute_copy(),
-            chain: &(),
+            node: self.node.clone(),
+            chain: self.chain,
         }
     }
 }

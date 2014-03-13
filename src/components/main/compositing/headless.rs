@@ -32,8 +32,10 @@ impl NullCompositor {
         let compositor = NullCompositor::new(port);
 
         // Tell the constellation about the initial fake size.
-        let ConstellationChan(ref chan) = constellation_chan;
-        chan.send(ResizedWindowMsg(Size2D(640u, 480u)));
+        {
+            let ConstellationChan(ref chan) = constellation_chan;
+            chan.send(ResizedWindowMsg(Size2D(640u, 480u)));
+        }
         compositor.handle_message(constellation_chan);
 
         // Drain compositor port, sometimes messages contain channels that are blocking
