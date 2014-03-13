@@ -37,8 +37,7 @@ pub struct HTMLIFrameElement {
     sandbox: Option<u8>
 }
 
-// FIXME(larsberg): rebase with ms2ger fix for bad uses of this to remove 'pub'
-pub struct Untraceable {
+struct Untraceable {
     frame: Option<Url>,
 }
 
