@@ -30,9 +30,8 @@ use std::cast::transmute;
 use std::cast;
 use std::cell::{RefCell, Ref, RefMut};
 use std::iter::{Map, Filter};
-use std::libc::{c_void, uintptr_t};
+use std::libc::uintptr_t;
 use std::mem;
-use std::raw::Box;
 
 use serialize::{Encoder, Encodable};
 
@@ -933,11 +932,10 @@ impl Node {
             CommentNodeTypeId |
             TextNodeTypeId |
             ProcessingInstructionNodeTypeId => {
-                self.SetTextContent(abstract_self, val);
+                self.SetTextContent(abstract_self, val)
             }
-            _ => {}
+            _ => Ok(())
         }
-        Ok(())
     }
 
     // http://dom.spec.whatwg.org/#dom-node-textcontent
@@ -1540,7 +1538,7 @@ impl Node {
                     let abstract_uint: uintptr_t = cast::transmute(abstract_self.get());
                     let other_uint: uintptr_t = cast::transmute(other.get());
                     
-                    let random = if (abstract_uint < other_uint) {
+                    let random = if abstract_uint < other_uint {
                         DOCUMENT_POSITION_FOLLOWING
                     } else {
                         DOCUMENT_POSITION_PRECEDING
