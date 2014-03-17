@@ -6,10 +6,6 @@
 
 #[allow(non_camel_case_types)];
 
-<<<<<<< HEAD
-use std::ascii::StrAsciiExt;
-=======
->>>>>>> 931d4849fd3ddd0fe98a052a28d8ebf03de516f1
 pub use servo_util::url::parse_url;
 use sync::Arc;
 pub use extra::url::Url;
