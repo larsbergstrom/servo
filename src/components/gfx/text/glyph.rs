@@ -673,10 +673,10 @@ impl<'a> GlyphStore {
 }
 
 pub struct GlyphIterator<'a> {
-    priv store:       &'a GlyphStore,
-    priv char_index:  uint,
-    priv char_range:  iter::Range<uint>,
-    priv glyph_range: Option<iter::Range<uint>>,
+    store:       &'a GlyphStore,
+    char_index:  uint,
+    char_range:  iter::Range<uint>,
+    glyph_range: Option<iter::Range<uint>>,
 }
 
 impl<'a> GlyphIterator<'a> {

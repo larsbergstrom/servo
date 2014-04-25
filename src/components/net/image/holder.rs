@@ -8,7 +8,7 @@ use local_image_cache::LocalImageCache;
 
 use sync::{Arc, Mutex};
 use geom::size::Size2D;
-use std::mem;
+use std::{cast, mem};
 use url::Url;
 
 // FIXME: Nasty coupling here This will be a problem if we want to factor out image handling from
@@ -22,11 +22,11 @@ pub struct ImageHolder {
     url: Url,
     image: Option<Arc<~Image>>,
     cached_size: Size2D<int>,
-    local_image_cache: Arc<Mutex<LocalImageCache>>,
+    local_image_cache: Arc<Mutex<*()>>,
 }
 
 impl ImageHolder {
-    pub fn new(url: Url, local_image_cache: Arc<Mutex<LocalImageCache>>) -> ImageHolder {
+    pub fn new(url: Url, local_image_cache: Arc<Mutex<*()>>) -> ImageHolder {
         debug!("ImageHolder::new() {}", url.to_str());
         let holder = ImageHolder {
             url: url,
@@ -41,9 +41,12 @@ impl ImageHolder {
         // should be done as early as possible and decode only once we
         // are sure that the image will be used.
         {
-            let mut local_image_cache = holder.local_image_cache.lock();
+            let val = holder.local_image_cache.lock();
+            let mut local_image_cache = unsafe {
+                cast::transmute::<*(), &mut LocalImageCache>(*val)
+            };
             local_image_cache.prefetch(&holder.url);
-            local_image_cache.decode(&holder.url);
+            local_image_cache.decode(&holder.url); 
         }
 
         holder
@@ -75,7 +78,11 @@ impl ImageHolder {
         // the image and store it for the future
         if self.image.is_none() {
             let port = {
-                self.local_image_cache.lock().get_image(&self.url)
+                let val = self.local_image_cache.lock();
+                let mut local_image_cache = unsafe {
+                    cast::transmute::<*(), &mut LocalImageCache>(*val)
+                };
+                local_image_cache.get_image(&self.url)
             };
             match port.recv() {
                 ImageReady(image) => {

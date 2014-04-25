@@ -14,7 +14,7 @@ use task::{spawn_named};
 
 // front-end representation of the profiler used to communicate with the profiler
 #[deriving(Clone)]
-pub struct ProfilerChan(Sender<ProfilerMsg>);
+pub struct ProfilerChan(pub Sender<ProfilerMsg>);
 
 impl ProfilerChan {
     pub fn send(&self, msg: ProfilerMsg) {

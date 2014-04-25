@@ -21,6 +21,7 @@ extern crate geom;
 extern crate hubbub;
 extern crate encoding;
 extern crate js;
+extern crate libc;
 extern crate native;
 extern crate serialize;
 #[phase(syntax)]

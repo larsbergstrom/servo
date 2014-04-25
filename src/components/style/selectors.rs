@@ -92,9 +92,9 @@ pub enum SimpleSelector {
 
 #[deriving(Eq, Clone)]
 pub struct AttrSelector {
-    name: ~str,
-    lower_name: ~str,
-    namespace: NamespaceConstraint,
+    pub name: ~str,
+    pub lower_name: ~str,
+    pub namespace: NamespaceConstraint,
 }
 
 #[deriving(Eq, Clone)]
@@ -590,7 +590,7 @@ mod tests {
 
     fn parse_ns(input: &str, namespaces: &NamespaceMap) -> Option<~[Selector]> {
         parse_selector_list(
-            cssparser::tokenize(input).map(|(v, _)| v).to_owned_vec(),
+            cssparser::tokenize(input).map(|(v, _)| v).collect(),
             namespaces)
     }
 

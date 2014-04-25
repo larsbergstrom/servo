@@ -43,11 +43,7 @@ impl Eq for BufferKey {
     }
 }
 
-impl TotalEq for BufferKey {
-    fn equals(&self, other: &BufferKey) -> bool {
-        self.eq(other)
-    }
-}
+impl TotalEq for BufferKey { }
 
 /// Create a key from a given size
 impl BufferKey {

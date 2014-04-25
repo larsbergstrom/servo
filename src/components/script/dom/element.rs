@@ -32,13 +32,13 @@ use std::cast;
 
 #[deriving(Encodable)]
 pub struct Element {
-    node: Node,
-    local_name: DOMString,     // TODO: This should be an atom, not a DOMString.
-    namespace: Namespace,
-    prefix: Option<DOMString>,
-    attrs: ~[JS<Attr>],
-    style_attribute: Option<style::PropertyDeclarationBlock>,
-    attr_list: Option<JS<AttrList>>
+    pub node: Node,
+    pub local_name: DOMString,     // TODO: This should be an atom, not a DOMString.
+    pub namespace: Namespace,
+    pub prefix: Option<DOMString>,
+    pub attrs: ~[JS<Attr>],
+    pub style_attribute: Option<style::PropertyDeclarationBlock>,
+    pub attr_list: Option<JS<AttrList>>
 }
 
 impl ElementDerived for EventTarget {
@@ -612,7 +612,7 @@ impl Element {
                 r.origin.y + r.size.height,
                 r.origin.x,
                 r.origin.x + r.size.width)
-        });
+        }).collect();
 
         ClientRectList::new(win, rects)
     }

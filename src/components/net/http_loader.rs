@@ -9,7 +9,6 @@ use http::client::{RequestWriter, NetworkStream};
 use http::method::Get;
 use http::headers::HeaderEnum;
 use std::io::Reader;
-use std::io::net::tcp::TcpStream;
 use std::slice;
 use servo_util::task::spawn_named;
 use url::Url;

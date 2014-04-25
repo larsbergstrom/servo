@@ -596,8 +596,8 @@ pub mod longhands {
 
             #[deriving(Clone)]
             pub struct SpecifiedValue {
-                horizontal: specified::LengthOrPercentage,
-                vertical: specified::LengthOrPercentage,
+                pub horizontal: specified::LengthOrPercentage,
+                pub vertical: specified::LengthOrPercentage,
             }
 
             #[inline]
@@ -893,9 +893,9 @@ pub mod longhands {
         pub use to_computed_value = super::computed_as_specified;
         #[deriving(Eq, Clone)]
         pub struct SpecifiedValue {
-            underline: bool,
-            overline: bool,
-            line_through: bool,
+            pub underline: bool,
+            pub overline: bool,
+            pub line_through: bool,
             // 'blink' is accepted in the parser but ignored.
             // Just not blinking the text is a conforming implementation per CSS 2.1.
         }
@@ -1403,7 +1403,7 @@ pub mod style_structs {
 #[deriving(Eq, Clone)]
 pub struct ComputedValues {
     % for style_struct in STYLE_STRUCTS:
-        ${style_struct.name}: CowArc<style_structs::${style_struct.name}>,
+        pub ${style_struct.name}: CowArc<style_structs::${style_struct.name}>,
     % endfor
     shareable: bool,
 }

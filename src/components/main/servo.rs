@@ -17,7 +17,7 @@ extern crate azure;
 extern crate geom;
 extern crate gfx;
 #[cfg(not(target_os="android"))]
-extern crate glfw = "glfw-rs";
+extern crate glfw;
 #[cfg(target_os="android")]
 extern crate glut;
 extern crate js;
@@ -37,6 +37,7 @@ extern crate stb_image;
 
 extern crate collections;
 extern crate green;
+extern crate libc;
 extern crate native;
 extern crate serialize;
 extern crate sync;
@@ -158,7 +159,9 @@ pub extern "C" fn android_start(argc: int, argv: **u8) -> int {
 
 #[cfg(not(test))]
 fn run(opts: opts::Opts) {
-    let mut pool = green::SchedPool::new(green::PoolConfig::new());
+    let mut pool_config = green::PoolConfig::new();
+    pool_config.event_loop_factory = rustuv::event_loop;
+    let mut pool = green::SchedPool::new(pool_config);
 
     let (compositor_port, compositor_chan) = CompositorChan::new();
     let profiler_chan = Profiler::create(opts.profiler_period);

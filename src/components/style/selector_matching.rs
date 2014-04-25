@@ -954,7 +954,7 @@ mod tests {
 
         let namespaces = NamespaceMap::new();
         css_selectors.iter().enumerate().map(|(i, selectors)| {
-            parse_selector_list(tokenize(*selectors).map(|(c, _)| c).to_owned_vec(), &namespaces)
+            parse_selector_list(tokenize(*selectors).map(|(c, _)| c).collect(), &namespaces)
             .unwrap().move_iter().map(|s| {
                 Rule {
                     selector: s.compound_selectors.clone(),
@@ -964,8 +964,8 @@ mod tests {
                         source_order: i,
                     }
                 }
-            }).to_owned_vec()
-        }).to_owned_vec()
+            }).collect()
+        }).collect()
     }
 
     #[test]

@@ -4,6 +4,8 @@
 
 #![crate_id = "github.com/mozilla/servo#macros:0.1"]
 #![crate_type = "lib"]
+#![crate_type = "rlib"]
+#![crate_type = "dylib"]
 
 #![feature(macro_rules)]
 

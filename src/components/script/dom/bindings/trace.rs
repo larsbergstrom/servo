@@ -7,9 +7,9 @@ use dom::bindings::utils::{Reflectable, Reflector};
 
 use js::jsapi::{JSObject, JSTracer, JS_CallTracer, JSTRACE_OBJECT};
 
+use libc;
 use std::cast;
 use std::cell::RefCell;
-use std::libc;
 use std::ptr;
 use std::ptr::null;
 use serialize::{Encodable, Encoder};
@@ -25,14 +25,16 @@ fn get_jstracer<'a, S: Encoder>(s: &'a mut S) -> &'a mut JSTracer {
     }
 }
 
-impl<T: Reflectable+Encodable<S>, S: Encoder> Encodable<S> for JS<T> {
-    fn encode(&self, s: &mut S) {
+impl<T: Reflectable+Encodable<S, E>, S: Encoder<E>, E> Encodable<S, E> for JS<T> {
+    fn encode(&self, s: &mut S) -> Result<(), E> {
         trace_reflector(get_jstracer(s), "", self.reflector());
+        Ok(())
     }
 }
 
-impl<S: Encoder> Encodable<S> for Reflector {
-    fn encode(&self, _s: &mut S) {
+impl<S: Encoder<E>, E> Encodable<S, E> for Reflector {
+    fn encode(&self, _s: &mut S) -> Result<(), E> {
+        Ok(())
     }
 }
 
