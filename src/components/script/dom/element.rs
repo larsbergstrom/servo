@@ -605,7 +605,7 @@ impl Element {
         let win = &doc.get().window;
         let node: JS<Node> = NodeCast::from(abstract_self);
         let rects = node.get_content_boxes();
-        let rects = rects.map(|r| {
+        let rects = rects.iter().map(|r| {
             ClientRect::new(
                 win,
                 r.origin.y,

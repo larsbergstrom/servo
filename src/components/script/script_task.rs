@@ -149,13 +149,13 @@ pub struct Page {
     pub fragment_node: Traceable<RefCell<Option<JS<Element>>>>
 }
 
-impl<S: Encoder<E>, E> Encodable<S, E> for Page {
+/*impl<S: Encoder<E>, E> Encodable<S, E> for Page {
     fn encode(&self, s: &mut S) -> Result<(), E> {
         let fragment_node = self.fragment_node.borrow();
         fragment_node.encode(s);
         Ok(())
    }
-}
+}*/
 
 pub struct PageTree {
     pub page: Rc<Page>,

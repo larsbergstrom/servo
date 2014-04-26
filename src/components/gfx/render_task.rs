@@ -138,7 +138,7 @@ pub struct RenderTask<C> {
     epoch: Epoch,
 
     /// A data structure to store unused LayerBuffers
-    priv buffer_map: BufferMap<~LayerBuffer>,
+    buffer_map: BufferMap<~LayerBuffer>,
 }
 
 // If we implement this as a function, we get borrowck errors from borrowing

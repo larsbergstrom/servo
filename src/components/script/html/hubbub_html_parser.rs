@@ -251,7 +251,7 @@ pub fn parse_html(page: &Page,
                   resource_task: ResourceTask)
                   -> HtmlParserResult {
     debug!("Hubbub: parsing {:?}", url);
-    let next_subpage_id: SubpageId = *page.next_subpage_id.borrow();
+    let next_subpage_id: SubpageId = *page.next_subpage_id.deref().borrow();
     // Spawn a CSS parser to receive links to CSS style sheets.
 
     let (discovery_chan, discovery_port) = channel();

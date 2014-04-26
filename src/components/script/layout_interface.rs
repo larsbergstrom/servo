@@ -65,15 +65,16 @@ pub enum LayoutQuery {
 
 /// The address of a node known to be valid. These must only be sent from content -> layout,
 /// because we do not trust layout.
-pub struct TrustedNodeAddress(*c_void);
+pub struct TrustedNodeAddress(pub *c_void);
 
-impl<S: Encoder> Encodable<S> for TrustedNodeAddress {
-    fn encode(&self, s: &mut S) {
+impl<S: Encoder<E>, E> Encodable<S, E> for TrustedNodeAddress {
+    fn encode(&self, s: &mut S) -> Result<(), E> {
         let TrustedNodeAddress(addr) = *self;
         let node = addr as *Node as *mut Node;
         unsafe {
             JS::from_raw(node).encode(s)
-        }
+        };
+        Ok(())
     }
 }
 
