@@ -54,3 +54,6 @@ getopts = "0.2.11"
 hyper = "0.7"
 url = "0.5"
 uuid = "0.1.17"
+
+[target.x86_64-pc-windows-gnu.dependencies]
+kernel32-sys = "0.1.4"
