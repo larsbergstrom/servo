@@ -138,7 +138,7 @@ class CommandBase(object):
         if not self.config["tools"]["system-cargo"]:
             self.config["tools"]["cargo-root"] = path.join(
                 context.sharedir, "cargo", self.cargo_build_id())
-        self.config["tools"].setdefault("rustc-with-gold", sys.platform != "win32")
+        self.config["tools"].setdefault("rustc-with-gold", sys.platform != "win32" and sys.platform != "msys")
 
         self.config.setdefault("build", {})
         self.config["build"].setdefault("android", False)
