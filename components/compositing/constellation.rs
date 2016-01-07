@@ -19,7 +19,9 @@ use compositor_task::Msg as ToCompositorMsg;
 use devtools_traits::{ChromeToDevtoolsControlMsg, DevtoolsControlMsg};
 use euclid::scale_factor::ScaleFactor;
 use euclid::size::{Size2D, TypedSize2D};
+#[cfg(not(target_os = "windows"))]
 use gaol;
+#[cfg(not(target_os = "windows"))]
 use gaol::sandbox::{self, Sandbox, SandboxMethods};
 use gfx::font_cache_task::FontCacheTask;
 use gfx_traits::PaintMsg as FromPaintMsg;
@@ -43,6 +45,7 @@ use offscreen_gl_context::GLContextAttributes;
 use pipeline::{CompositionPipeline, InitialPipelineState, Pipeline, UnprivilegedPipelineContent};
 use profile_traits::mem;
 use profile_traits::time;
+#[cfg(not(target_os = "windows"))]
 use sandboxing;
 use script_traits::{CompositorEvent, ConstellationControlMsg, LayoutControlMsg};
 use script_traits::{LayoutMsg as FromLayoutMsg, ScriptMsg as FromScriptMsg, ScriptTaskFactory};
@@ -284,6 +287,7 @@ enum ExitPipelineMode {
 }
 
 enum ChildProcess {
+#[cfg(not(target_os = "windows"))]
     Sandboxed(gaol::platform::process::Process),
     Unsandboxed(process::Child),
 }
@@ -408,27 +412,7 @@ impl<LTF: LayoutTaskFactory, STF: ScriptTaskFactory> Constellation<LTF, STF> {
             //
             // Yes, that's all there is to it!
             if opts::multiprocess() {
-                let (server, token) =
-                    IpcOneShotServer::<IpcSender<UnprivilegedPipelineContent>>::new().unwrap();
-
-                // If there is a sandbox, use the `gaol` API to create the child process.
-                let child_process = if opts::get().sandbox {
-                    let mut command = sandbox::Command::me().unwrap();
-                    command.arg("--content-process").arg(token);
-                    let profile = sandboxing::content_process_sandbox_profile();
-                    ChildProcess::Sandboxed(Sandbox::new(profile).start(&mut command).expect(
-                        "Failed to start sandboxed child process!"))
-                } else {
-                    let path_to_self = env::current_exe().unwrap();
-                    let mut child_process = process::Command::new(path_to_self);
-                    child_process.arg("--content-process");
-                    child_process.arg(token);
-                    ChildProcess::Unsandboxed(child_process.spawn().unwrap())
-                };
-                self.child_processes.push(child_process);
-
-                let (_receiver, sender) = server.accept().unwrap();
-                sender.send(unprivileged_pipeline_content).unwrap();
+                  self.spawn_multiprocess(unprivileged_pipeline_content);
             } else {
                 unprivileged_pipeline_content.start_all::<LTF, STF>(false);
             }
@@ -438,6 +422,37 @@ impl<LTF: LayoutTaskFactory, STF: ScriptTaskFactory> Constellation<LTF, STF> {
         self.pipelines.insert(pipeline_id, pipeline);
     }
 
+
+    #[cfg(not(target_os = "windows"))]
+    fn spawn_multiprocess(&mut self, unprivileged_pipeline_content: UnprivilegedPipelineContent) {
+        let (server, token) =
+            IpcOneShotServer::<IpcSender<UnprivilegedPipelineContent>>::new().unwrap();
+
+        // If there is a sandbox, use the `gaol` API to create the child process.
+        let child_process = if opts::get().sandbox {
+            let mut command = sandbox::Command::me().unwrap();
+            command.arg("--content-process").arg(token);
+            let profile = sandboxing::content_process_sandbox_profile();
+            ChildProcess::Sandboxed(Sandbox::new(profile).start(&mut command).expect(
+                "Failed to start sandboxed child process!"))
+        } else {
+            let path_to_self = env::current_exe().unwrap();
+            let mut child_process = process::Command::new(path_to_self);
+            child_process.arg("--content-process");
+            child_process.arg(token);
+            ChildProcess::Unsandboxed(child_process.spawn().unwrap())
+        };
+
+        self.child_processes.push(child_process);
+        let (_receiver, sender) = server.accept().unwrap();
+        sender.send(unprivileged_pipeline_content).unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    fn spawn_multiprocess(&mut self, _: UnprivilegedPipelineContent) {
+        panic!("Multiprocess is not supported on Windows.");
+    }
+    
     // Push a new (loading) pipeline to the list of pending frame changes
     fn push_pending_frame(&mut self, new_pipeline_id: PipelineId,
                           old_pipeline_id: Option<PipelineId>) {
