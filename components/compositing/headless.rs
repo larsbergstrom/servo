@@ -7,6 +7,8 @@ use compositor_thread::{CompositorEventListener, CompositorReceiver};
 use compositor_thread::{InitialCompositorState, Msg};
 use euclid::scale_factor::ScaleFactor;
 use euclid::{Point2D, Size2D};
+use ipc_channel::ipc;
+use msg::constellation_msg::AnimationState;
 use msg::constellation_msg::WindowSizeData;
 use profile_traits::mem;
 use profile_traits::time;
@@ -73,7 +75,9 @@ impl CompositorEventListener for NullCompositor {
                 // another thread from finishing (i.e. SetIds)
                 while self.port.try_recv_compositor_msg().is_some() {}
 
-                self.time_profiler_chan.send(time::ProfilerMsg::Exit);
+                let (sender, receiver) = ipc::channel().unwrap();
+                self.time_profiler_chan.send(time::ProfilerMsg::Exit(sender));
+                receiver.recv().unwrap();
                 self.mem_profiler_chan.send(mem::ProfilerMsg::Exit);
 
                 return false
