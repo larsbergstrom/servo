@@ -12,11 +12,15 @@ use profile_traits::time::{TimerMetadataReflowType, TimerMetadataFrameType};
 use std::borrow::ToOwned;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::Path;
 use std::time::Duration;
 use std::{thread, f64};
 use std_time::precise_time_ns;
+use util::opts::OutputOptions;
 use util::thread::spawn_named;
-use util::time::duration_from_seconds;
 
 pub trait Formattable {
     fn format(&self) -> String;
@@ -28,23 +32,18 @@ impl Formattable for Option<TimerMetadata> {
             // TODO(cgaebel): Center-align in the format strings as soon as rustc supports it.
             Some(ref meta) => {
                 let url = &*meta.url;
-                let url = if url.len() > 30 {
-                    &url[..30]
-                } else {
-                    url
-                };
                 let incremental = match meta.incremental {
-                    TimerMetadataReflowType::Incremental => "    yes",
-                    TimerMetadataReflowType::FirstReflow => "    no ",
+                    TimerMetadataReflowType::Incremental => "yes",
+                    TimerMetadataReflowType::FirstReflow => "no",
                 };
                 let iframe = match meta.iframe {
-                    TimerMetadataFrameType::RootWindow => "  yes",
-                    TimerMetadataFrameType::IFrame => "  no ",
+                    TimerMetadataFrameType::RootWindow => "yes",
+                    TimerMetadataFrameType::IFrame => "no",
                 };
-                format!(" {:14} {:9} {:30}", incremental, iframe, url)
+                format!(" {}, {}, {}", incremental, iframe, url)
             },
             None =>
-                format!(" {:14} {:9} {:30}", "    N/A", "  N/A", "             N/A")
+                format!(" {}, {}, {}", "    N/A", "  N/A", "             N/A")
         }
     }
 }
@@ -116,35 +115,32 @@ type ProfilerBuckets = BTreeMap<(ProfilerCategory, Option<TimerMetadata>), Vec<f
 pub struct Profiler {
     pub port: IpcReceiver<ProfilerMsg>,
     buckets: ProfilerBuckets,
+    output: Option<OutputOptions>,
     pub last_msg: Option<ProfilerMsg>,
 }
 
 impl Profiler {
-    pub fn create(period: Option<f64>) -> ProfilerChan {
+    pub fn create(output: &Option<OutputOptions>) -> ProfilerChan {
         let (chan, port) = ipc::channel().unwrap();
-        match period {
-            Some(period) => {
-                let chan = chan.clone();
-                spawn_named("Time profiler timer".to_owned(), move || {
-                    loop {
-                        thread::sleep(duration_from_seconds(period));
-                        if chan.send(ProfilerMsg::Print).is_err() {
-                            break;
-                        }
-                    }
-                });
+        match output {
+            &Some(_) => {
                 // Spawn the time profiler.
+                let output = output.clone();
                 spawn_named("Time profiler".to_owned(), move || {
-                    let mut profiler = Profiler::new(port);
+                    let mut profiler = Profiler::new(port, output);
                     profiler.start();
                 });
             }
-            None => {
-                // No-op to handle messages when the time profiler is inactive.
+            &None => {
+                // No-op to handle messages when the time profiler is not printing.
                 spawn_named("Time profiler".to_owned(), move || {
                     loop {
                         match port.recv() {
-                            Err(_) | Ok(ProfilerMsg::Exit) => break,
+                            Err(_) => break,
+                            Ok(ProfilerMsg::Exit(chan)) => {
+                                chan.send(());
+                                break
+                            },
                             _ => {}
                         }
                     }
@@ -198,10 +194,11 @@ impl Profiler {
         profiler_chan
     }
 
-    pub fn new(port: IpcReceiver<ProfilerMsg>) -> Profiler {
+    pub fn new(port: IpcReceiver<ProfilerMsg>, output: Option<OutputOptions>) -> Profiler {
         Profiler {
             port: port,
             buckets: BTreeMap::new(),
+            output: output,
             last_msg: None,
         }
     }
@@ -230,12 +227,10 @@ impl Profiler {
                 let ms = (t.1 - t.0) as f64 / 1000000f64;
                 self.find_or_insert(k, ms);
             },
-            ProfilerMsg::Print => if let Some(ProfilerMsg::Time(..)) = self.last_msg {
-                // only print if more data has arrived since the last printout
-                self.print_buckets();
-            },
-            ProfilerMsg::Exit => {
+            ProfilerMsg::Exit(chan) => {
                 heartbeats::cleanup();
+                self.print_buckets();
+                chan.send(());
                 return false;
             },
         };
@@ -244,30 +239,63 @@ impl Profiler {
     }
 
     fn print_buckets(&mut self) {
-        println!("{:35} {:14} {:9} {:30} {:15} {:15} {:-15} {:-15} {:-15}",
-                 "_category_", "_incremental?_", "_iframe?_",
-                 "            _url_", "    _mean (ms)_", "  _median (ms)_",
-                 "     _min (ms)_", "     _max (ms)_", "      _events_");
-        for (&(ref category, ref meta), ref mut data) in &mut self.buckets {
-            data.sort_by(|a, b| {
-                if a < b {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
+        match self.output {
+            Some(OutputOptions::FileName(ref filename)) => {
+                let path = Path::new(&filename);
+                let mut file = match File::create(&path) {
+                    Err(e) => panic!("Couldn't create {}: {}",
+                                     path.display(),
+                                     Error::description(&e)),
+                    Ok(file) => file,
+                };
+                write!(file, "_category_, _incremental?_, _iframe?_, _url_, _mean (ms)_, _median (ms)_, _min (ms)_, _max (ms)_, _events_\n");
+                for (&(ref category, ref meta), ref mut data) in &mut self.buckets {
+                    data.sort_by(|a, b| {
+                        if a < b {
+                            Ordering::Less
+                        } else {
+                            Ordering::Greater
+                        }
+                    });
+                    let data_len = data.len();
+                    if data_len > 0 {
+                        let (mean, median, min, max) =
+                            (data.iter().sum::<f64>() / (data_len as f64),
+                             data[data_len / 2],
+                             data.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
+                             data.iter().fold(-f64::INFINITY, |a, &b| a.max(b)));
+                        write!(file, "{}, {}, {:15.4}, {:15.4}, {:15.4}, {:15.4}, {:15}\n",
+                               category.format(), meta.format(), mean, median, min, max, data_len);
+                    }
                 }
-            });
-            let data_len = data.len();
-            if data_len > 0 {
-                let (mean, median, min, max) =
-                    (data.iter().sum::<f64>() / (data_len as f64),
-                     data[data_len / 2],
-                     data.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
-                     data.iter().fold(-f64::INFINITY, |a, &b| a.max(b)));
-                println!("{:-35}{} {:15.4} {:15.4} {:15.4} {:15.4} {:15}",
-                         category.format(), meta.format(), mean, median, min, max, data_len);
-            }
-        }
-        println!("");
+            },
+            _ => {
+                println!("{:35} {:14} {:9} {:30} {:15} {:15} {:-15} {:-15} {:-15}",
+                         "_category_", "_incremental?_", "_iframe?_",
+                         "            _url_", "    _mean (ms)_", "  _median (ms)_",
+                         "     _min (ms)_", "     _max (ms)_", "      _events_");
+                for (&(ref category, ref meta), ref mut data) in &mut self.buckets {
+                    data.sort_by(|a, b| {
+                        if a < b {
+                            Ordering::Less
+                        } else {
+                            Ordering::Greater
+                        }
+                    });
+                    let data_len = data.len();
+                    if data_len > 0 {
+                        let (mean, median, min, max) =
+                            (data.iter().sum::<f64>() / (data_len as f64),
+                             data[data_len / 2],
+                             data.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
+                             data.iter().fold(-f64::INFINITY, |a, &b| a.max(b)));
+                        println!("{:-35}{} {:15.4} {:15.4} {:15.4} {:15.4} {:15}",
+                                 category.format(), meta.format(), mean, median, min, max, data_len);
+                    }
+                }
+                println!("");
+            },
+        };
     }
 }
 

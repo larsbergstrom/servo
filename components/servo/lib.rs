@@ -139,8 +139,8 @@ impl Browser {
             }
             None => false
         };
-        let time_profiler_chan = profile_time::Profiler::create(opts.time_profiler_period);
-        let mem_profiler_chan = profile_mem::Profiler::create(opts.mem_profiler_period);
+        let time_profiler_chan = profile_time::Profiler::create(&opts.time_profiling);
+        let mem_profiler_chan = profile_mem::Profiler::create(&opts.mem_profiling);
         let devtools_chan = opts.devtools_port.map(|port| {
             devtools::start_server(port)
         });
