@@ -12,8 +12,8 @@ use std::borrow::ToOwned;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::thread;
+use util::opts::OutputOptions;
 use util::thread::spawn_named;
-use util::time::duration_from_seconds;
 
 pub struct Profiler {
     /// The port through which messages are received.
@@ -27,24 +27,9 @@ const JEMALLOC_HEAP_ALLOCATED_STR: &'static str = "jemalloc-heap-allocated";
 const SYSTEM_HEAP_ALLOCATED_STR: &'static str = "system-heap-allocated";
 
 impl Profiler {
-    pub fn create(period: Option<f64>) -> ProfilerChan {
+    pub fn create(period: &Option<OutputOptions>) -> ProfilerChan {
         let (chan, port) = ipc::channel().unwrap();
 
-        // Create the timer thread if a period was provided.
-        if let Some(period) = period {
-            let chan = chan.clone();
-            spawn_named("Memory profiler timer".to_owned(), move || {
-                loop {
-                    thread::sleep(duration_from_seconds(period));
-                    if chan.send(ProfilerMsg::Print).is_err() {
-                        break;
-                    }
-                }
-            });
-        }
-
-        // Always spawn the memory profiler. If there is no timer thread it won't receive regular
-        // `Print` events, but it will still receive the other events.
         spawn_named("Memory profiler".to_owned(), move || {
             let mut mem_profiler = Profiler::new(port);
             mem_profiler.start();
@@ -102,12 +87,11 @@ impl Profiler {
                 }
             },
 
-            ProfilerMsg::Print => {
-                self.handle_print_msg();
-                true
+            ProfilerMsg::Exit => {
+                // TODO: handle file output
+                //self.handle_print_msg();
+                false
             },
-
-            ProfilerMsg::Exit => false
         }
     }
 

@@ -45,13 +45,13 @@ pub struct Opts {
     /// platform default setting.
     pub device_pixels_per_px: Option<f32>,
 
-    /// `None` to disable the time profiler or `Some` with an interval in seconds to enable it and
-    /// cause it to produce output on that interval (`-p`).
-    pub time_profiler_period: Option<f64>,
+    /// `None` to disable the time profiler or `Some` with an output option to determine where to
+    /// print that output (`-p`).
+    pub time_profiling: Option<OutputOptions>,
 
-    /// `None` to disable the memory profiler or `Some` with an interval in seconds to enable it
-    /// and cause it to produce output on that interval (`-m`).
-    pub mem_profiler_period: Option<f64>,
+    /// `None` to disable the memory profiler or `Some` with an output option to determine where to
+    /// print that output (`-p`).
+    pub mem_profiling: Option<OutputOptions>,
 
     /// The number of threads to use for layout (`-y`). Defaults to 1, which results in a recursive
     /// sequential algorithm.
@@ -363,6 +363,13 @@ pub fn print_debug_usage(app: &str) -> ! {
     process::exit(0)
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+pub enum OutputOptions {
+    FileName(String),
+    Stdout
+}
+
+
 fn args_fail(msg: &str) -> ! {
     let mut stderr = io::stderr();
     stderr.write_all(msg.as_bytes()).unwrap();
@@ -444,8 +451,8 @@ pub fn default_opts() -> Opts {
         gpu_painting: false,
         tile_size: 512,
         device_pixels_per_px: None,
-        time_profiler_period: None,
-        mem_profiler_period: None,
+        time_profiling: None,
+        mem_profiling: None,
         layout_threads: 1,
         nonincremental_layout: false,
         userscripts: None,
@@ -500,8 +507,8 @@ pub fn from_cmdline_args(args: &[String]) -> ArgumentParsingResult {
     opts.optopt("s", "size", "Size of tiles", "512");
     opts.optopt("", "device-pixel-ratio", "Device pixels per px", "");
     opts.optopt("t", "threads", "Number of paint threads", "1");
-    opts.optflagopt("p", "profile", "Profiler flag and output interval", "10");
-    opts.optflagopt("m", "memory-profile", "Memory profiler flag and output interval", "10");
+    opts.optflagopt("p", "profile", "Time profiler flag and CSV output filename (blank for stdout)", "time.csv");
+    opts.optflagopt("m", "memory-profile", "Memory profiler flag and CSV output filename (blank for stdout)", "mem.csv");
     opts.optflag("x", "exit", "Exit after load flag");
     opts.optopt("y", "layout-threads", "Number of threads to use for layout", "1");
     opts.optflag("i", "nonincremental-layout", "Enable to turn off incremental layout.");
@@ -605,15 +612,24 @@ pub fn from_cmdline_args(args: &[String]) -> ArgumentParsingResult {
         None => cmp::max(num_cpus::get() * 3 / 4, 1),
     };
 
-    // If only the flag is present, default to a 5 second period for both profilers.
-    let time_profiler_period = opt_match.opt_default("p", "5").map(|period| {
-        period.parse().expect("Error parsing option: -p")
-    });
-
-    let mem_profiler_period = opt_match.opt_default("m", "5").map(|period| {
-        period.parse().expect("Error parsing option: -m")
-    });
-
+    // If only the flag is present, default to stdout
+    let time_profiling = if opt_match.opt_present("p") {
+        match opt_match.opt_str("p") {
+            Some(filename) => Some(OutputOptions::FileName(filename)),
+            None => Some(OutputOptions::Stdout),
+        }
+    } else {
+        None
+    };
+    let mem_profiling = if opt_match.opt_present("m") {
+        match opt_match.opt_str("m") {
+            Some(filename) => Some(OutputOptions::FileName(filename)),
+            None => Some(OutputOptions::Stdout),
+        }
+    } else {
+        None
+    };
+    
     let gpu_painting = !FORCE_CPU_PAINTING && opt_match.opt_present("g");
 
     let mut layout_threads: usize = match opt_match.opt_str("y") {
@@ -682,8 +698,8 @@ pub fn from_cmdline_args(args: &[String]) -> ArgumentParsingResult {
         gpu_painting: gpu_painting,
         tile_size: tile_size,
         device_pixels_per_px: device_pixels_per_px,
-        time_profiler_period: time_profiler_period,
-        mem_profiler_period: mem_profiler_period,
+        time_profiling: time_profiling,
+        mem_profiling: mem_profiling,
         layout_threads: layout_threads,
         nonincremental_layout: nonincremental_layout,
         userscripts: opt_match.opt_default("userscripts", ""),

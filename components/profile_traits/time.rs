@@ -29,10 +29,8 @@ impl ProfilerChan {
 pub enum ProfilerMsg {
     /// Normal message used for reporting time
     Time((ProfilerCategory, Option<TimerMetadata>), (u64, u64), (u64, u64)),
-    /// Message used to force print the profiling metrics
-    Print,
     /// Tells the profiler to shut down.
-    Exit,
+    Exit(IpcSender<()>),
 }
 
 #[repr(u32)]
