@@ -9,7 +9,6 @@ use compositor_thread::{InitialCompositorState, Msg};
 use euclid::scale_factor::ScaleFactor;
 use euclid::{Point2D, Size2D};
 use ipc_channel::ipc;
-use msg::constellation_msg::AnimationState;
 use msg::constellation_msg::WindowSizeData;
 use profile_traits::mem;
 use profile_traits::time;
