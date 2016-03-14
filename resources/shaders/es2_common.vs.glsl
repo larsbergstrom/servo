@@ -6,6 +6,8 @@
 
 #define SERVO_ES2
 
+#extension GL_EXT_gpu_shader4 : enable
+
 uniform mat4 uTransform;
 uniform vec4 uOffsets[32];
 uniform vec4 uClipRects[64];
@@ -15,6 +17,7 @@ uniform vec4 uBlendParams;
 uniform vec4 uFilterParams;
 uniform float uDevicePixelRatio;
 uniform vec4 uTileParams[64];
+uniform vec4 uAtlasParams;
 
 attribute vec3 aPosition;
 attribute vec4 aPositionRect;  // Width can be negative to flip horizontally (for border corners).
