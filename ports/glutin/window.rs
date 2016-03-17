@@ -324,7 +324,7 @@ impl Window {
         // WebRender can use the normal blocking event check and proper vsync,
         // because it doesn't call X11 functions from another thread, so doesn't
         // hit the same issues explained below.
-        if opts::get().use_webrender {
+        if false { //opts::get().use_webrender {
             let event = self.window.wait_events().next().unwrap();
             let mut close = self.handle_window_event(event);
             if !close {
@@ -587,7 +587,8 @@ impl WindowMethods for Window {
     }
 
     fn hidpi_factor(&self) -> ScaleFactor<ScreenPx, DevicePixel, f32> {
-        ScaleFactor::new(self.window.hidpi_factor())
+        ScaleFactor::new(2.0)
+//        ScaleFactor::new(self.window.hidpi_factor())
     }
 
     fn set_page_title(&self, title: Option<String>) {
