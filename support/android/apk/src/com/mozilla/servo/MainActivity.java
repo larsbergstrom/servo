@@ -41,4 +41,12 @@ public class MainActivity extends android.app.NativeActivity {
             set_url(url);
         }
     }
+
+    @Override
+    protected void onStop() {
+        super.onStop();  // Always call the superclass method first
+
+        Log.d(LOGTAG, "got onStop; finishing servo activity");
+        this.finish();
+    }
 }
