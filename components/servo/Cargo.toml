@@ -68,11 +68,9 @@ energy-profiling = ["profile_traits/energy-profiling"]
 
 # Uncomment to profile on Linux:
 #
-# [profile.release]
-# opt-level = 3
-# debug = true
-# rpath = false
-# lto = false
+[profile.release]
+opt-level = 3
+debug = true
 
 [dependencies.compositing]
 path = "../compositing"

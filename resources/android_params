@@ -6,4 +6,7 @@
 # lines (the "-p" and "10" are separate even though they are related).
 
 servo
-http://en.wikipedia.org/wiki/Rust
+-w
+-Z
+wr-stats
+http://lars.com/demos/spinning.html

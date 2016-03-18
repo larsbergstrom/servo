@@ -1,0 +1,6 @@
+#!/bin/sh
+#  -C llvm-args="-mfpu=vfp3" "$@"
+#echo rustc -C target-feature=+neon "$@"
+#-C llvm-args='-float-api=hard' 
+#-C target-feature=+vfp 
+rustc -C target-feature=+neon "$@"
