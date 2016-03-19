@@ -6,6 +6,7 @@ import android.util.Log;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
+import java.lang.System;
 
 
 public class MainActivity extends android.app.NativeActivity {
@@ -47,6 +48,10 @@ public class MainActivity extends android.app.NativeActivity {
         super.onStop();  // Always call the superclass method first
 
         Log.d(LOGTAG, "got onStop; finishing servo activity");
-        this.finish();
+        finish();
+
+        int pid = android.os.Process.myPid();
+        android.os.Process.killProcess(pid);
+        System.exit(0);
     }
 }

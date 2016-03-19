@@ -14,8 +14,6 @@
 
     <application android:label="Servo" android:icon="@mipmap/servo">
         <activity android:name="com.mozilla.servo.MainActivity"
-                  android:finishOnTaskLaunch="true"
-                  android:stateNotNeeded="true"
                 android:label="Servo"
                 android:configChanges="orientation|keyboardHidden">
             <intent-filter>
