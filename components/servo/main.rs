@@ -39,6 +39,7 @@ use servo::compositing::windowing::WindowEvent;
 use servo::net_traits::hosts;
 use servo::util::opts::{self, ArgumentParsingResult};
 use std::rc::Rc;
+use std::thread;
 
 #[cfg(not(target_os = "android"))]
 fn load_gl_when_headless() {
@@ -49,6 +50,8 @@ fn load_gl_when_headless() {
 fn load_gl_when_headless() {}
 
 fn main() {
+    thread::sleep_ms(100);
+
     // Parse the command line options and store them globally
     let opts_result = opts::from_cmdline_args(&*args());
 

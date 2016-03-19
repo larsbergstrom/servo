@@ -28,6 +28,8 @@ public class MainActivity extends android.app.NativeActivity {
             out.println("-w");
             String absUrl = url.replace("file:///storage/emulated/0/", "/sdcard/");
             out.println(absUrl);
+            out.flush();
+            out.close();
         } catch (FileNotFoundException e) {
         }
     }
